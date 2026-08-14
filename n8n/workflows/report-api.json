@@ -1,0 +1,88 @@
+{
+  "name": "SmartCRM Report API",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "smartcrm-report",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "26a47774-181b-4dd6-8a0c-4923e8ff27fc",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -48,
+        -32
+      ],
+      "webhookId": "eb10e322-06c2-45bb-8c0c-5ba9f76e22b2"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [],
+          "number": []
+        },
+        "options": {}
+      },
+      "id": "027d8aba-58d1-4033-a6e6-18401dea6d63",
+      "name": "Set Report Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        256,
+        -32
+      ],
+      "notesInFlow": true,
+      "notes": "This node defines the weekly report JSON that your CRM page will fetch."
+    },
+    {
+      "parameters": {
+        "functionCode": "return [\n  {\n    json: [\n      {\n        \"dateRange\": \"October 6 – October 12, 2025\",\n        \"totalLeads\": 55,\n        \"hotLeads\": 30,\n        \"warmLeads\": 20,\n        \"coldLeads\": 5,\n        \"newLeads\": 10,\n        \"insight1\": \"Hot leads increased 15% from last week.\",\n        \"insight2\": \"Warm leads maintained consistent engagement.\",\n        \"insight3\": \"Cold leads declined by 10% — positive sign.\",\n        \"recommendation1\": \"Prioritize follow-ups for Hot leads.\",\n        \"recommendation2\": \"Automate reactivation for Warm leads.\",\n        \"recommendation3\": \"Drop Cold leads after 3 no-replies.\",\n        \"aiCommentary\": \"Overall lead quality improving; maintain outreach consistency.\"\n      },\n      {\n        \"dateRange\": \"September 29 – October 5, 2025\",\n        \"totalLeads\": 48,\n        \"hotLeads\": 25,\n        \"warmLeads\": 15,\n        \"coldLeads\": 8,\n        \"newLeads\": 12,\n        \"insight1\": \"Weekly total leads slightly decreased (-5%).\",\n        \"insight2\": \"Hot leads remained steady.\",\n        \"insight3\": \"Cold leads conversion dropped.\",\n        \"recommendation1\": \"Review ad targeting for Cold leads.\",\n        \"recommendation2\": \"Double down on high-performing channels.\",\n        \"recommendation3\": \"Continue nurturing Warm leads.\",\n        \"aiCommentary\": \"Lead pipeline stabilized after prior week's spike.\"\n      }\n    ]\n  }\n];"
+      },
+      "id": "df7fb186-a592-41f0-8a5c-af2262f33251",
+      "name": "Return JSON Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        544,
+        -32
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Set Report Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Report Data": {
+      "main": [
+        [
+          {
+            "node": "Return JSON Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "b6800deb-f61e-45b8-8a7a-87e5342ee21e",
+  "meta": {
+    "instanceId": "6ed31fb7c0dd6fba0122cd34e33ec48e6c9d473b90dd61cef58072f5aa0d15a6"
+  },
+  "id": "sR2gwwmhfaOh07iI",
+  "tags": []
+}
