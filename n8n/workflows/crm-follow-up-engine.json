@@ -1,0 +1,412 @@
+{
+    "name":  "Smart CRM Portal - CRM Follow-Up Engine",
+    "nodes":  [
+                  {
+                      "parameters":  {
+                                         "pollTimes":  {
+                                                           "item":  [
+                                                                        {
+                                                                            "mode":  "everyMinute"
+                                                                        }
+                                                                    ]
+                                                       },
+                                         "documentId":  {
+                                                            "__rl":  true,
+                                                            "value":  "1ZMOWZsPAs47m6gOOF1gdVdI5YMq0EPzWX-zn6ybkpZ4",
+                                                            "mode":  "list",
+                                                            "cachedResultName":  "Smart CRM Portal - Leads Database",
+                                                            "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1ZMOWZsPAs47m6gOOF1gdVdI5YMq0EPzWX-zn6ybkpZ4/edit?usp=drivesdk"
+                                                        },
+                                         "sheetName":  {
+                                                           "__rl":  true,
+                                                           "value":  "gid=0",
+                                                           "mode":  "list",
+                                                           "cachedResultName":  "RawLeads",
+                                                           "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1ZMOWZsPAs47m6gOOF1gdVdI5YMq0EPzWX-zn6ybkpZ4/edit#gid=0"
+                                                       },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.googleSheetsTrigger",
+                      "typeVersion":  1,
+                      "position":  [
+                                       -256,
+                                       32
+                                   ],
+                      "id":  "b1db93ff-9337-4fbb-b930-bc718501a543",
+                      "name":  "Google Sheets Trigger"
+                  },
+                  {
+                      "parameters":  {
+                                         "sendTo":  "={{ $(\u0027Google Sheets Trigger\u0027).item.json.Email }}",
+                                         "subject":  "Let’s Tailor Your CRM Demo Together",
+                                         "message":  "=Hi {{ $(\u0027Google Sheets Trigger\u0027).item.json.Name }}, \u003cbr\u003e\u003cbr\u003e\n\nThanks again for connecting! Based on what you’ve shared, it sounds like you’re ready to move forward with a CRM intake solution that’s both efficient and scalable.\u003cbr\u003e\n\nI’d love to walk you through a quick demo tailored to your setup—just to make sure it aligns with your goals and budget. Let me know what time works best for you, and I’ll send over a calendar invite.\u003cbr\u003e\n{{ $json.htmlLink }}\n\u003cbr\u003e\u003cbr\u003e\n\nBest,\u003cbr\u003e\nSmart CRM Portal",
+                                         "options":  {
+                                                         "appendAttribution":  false
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.gmail",
+                      "typeVersion":  2.1,
+                      "position":  [
+                                       416,
+                                       -64
+                                   ],
+                      "id":  "da187349-b86a-4bdf-9537-a12b06a03064",
+                      "name":  "Hot Lead Message",
+                      "webhookId":  "bde5f9f8-baca-4b04-8485-4a8b67593908"
+                  },
+                  {
+                      "parameters":  {
+                                         "sendTo":  "={{ $json.Email }}",
+                                         "subject":  "Let’s Tailor Your CRM Demo Together",
+                                         "message":  "=Hi {{ $json.Name }},\u003cbr\u003e\u003cbr\u003e\n\nThanks again for connecting! Based on what you’ve shared, it sounds like you’re exploring CRM intake options that can streamline your process without overcomplicating things.\u003cbr\u003e\n\nI’d love to walk you through a quick demo—something tailored to your setup and goals. No pressure, just a chance to see how it could fit into your workflow and budget.\u003cbr\u003e\n\nLet me know what time works best for you, and I’ll send over a calendar invite.\u003cbr\u003e\u003cbr\u003e\n\nBest,\u003cbr\u003e\nSmart CRM Portal",
+                                         "options":  {
+                                                         "appendAttribution":  false
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.gmail",
+                      "typeVersion":  2.1,
+                      "position":  [
+                                       640,
+                                       128
+                                   ],
+                      "id":  "59e1f89d-b8ea-4df2-a6d4-ec759b14a262",
+                      "name":  "Warm Lead Message",
+                      "webhookId":  "bde5f9f8-baca-4b04-8485-4a8b67593908"
+                  },
+                  {
+                      "parameters":  {
+                                         "amount":  1,
+                                         "unit":  "days"
+                                     },
+                      "type":  "n8n-nodes-base.wait",
+                      "typeVersion":  1.1,
+                      "position":  [
+                                       416,
+                                       128
+                                   ],
+                      "id":  "4d8d9fff-db4a-48e9-a583-4ed97905bfb0",
+                      "name":  "Wait",
+                      "webhookId":  "18fbdcd9-dc55-44ac-91e8-7b4359f1943e"
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "appendOrUpdate",
+                                         "documentId":  {
+                                                            "__rl":  true,
+                                                            "value":  "1ZMOWZsPAs47m6gOOF1gdVdI5YMq0EPzWX-zn6ybkpZ4",
+                                                            "mode":  "list",
+                                                            "cachedResultName":  "Smart CRM Portal - Leads Database",
+                                                            "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1ZMOWZsPAs47m6gOOF1gdVdI5YMq0EPzWX-zn6ybkpZ4/edit?usp=drivesdk"
+                                                        },
+                                         "sheetName":  {
+                                                           "__rl":  true,
+                                                           "value":  942007100,
+                                                           "mode":  "list",
+                                                           "cachedResultName":  "Cold Leads",
+                                                           "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1ZMOWZsPAs47m6gOOF1gdVdI5YMq0EPzWX-zn6ybkpZ4/edit#gid=942007100"
+                                                       },
+                                         "columns":  {
+                                                         "mappingMode":  "defineBelow",
+                                                         "value":  {
+                                                                       "Name":  "={{ $json.Name }}",
+                                                                       "Email":  "={{ $json.Email }}",
+                                                                       "Summary":  "={{ $json.Summary }}",
+                                                                       "Intent":  "={{ $json.Intent }}",
+                                                                       "Category":  "={{ $json.Category }}",
+                                                                       "Budget":  "={{ $json.Budget }}",
+                                                                       "Message":  "={{ $json.Message }}"
+                                                                   },
+                                                         "matchingColumns":  [
+                                                                                 "Name"
+                                                                             ],
+                                                         "schema":  [
+                                                                        {
+                                                                            "id":  "Name",
+                                                                            "displayName":  "Name",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true,
+                                                                            "removed":  false
+                                                                        },
+                                                                        {
+                                                                            "id":  "Email",
+                                                                            "displayName":  "Email",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "Message",
+                                                                            "displayName":  "Message",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "Budget",
+                                                                            "displayName":  "Budget",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "Category",
+                                                                            "displayName":  "Category",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "Intent",
+                                                                            "displayName":  "Intent",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "Summary",
+                                                                            "displayName":  "Summary",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "Date",
+                                                                            "displayName":  "Date",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true,
+                                                                            "removed":  true
+                                                                        }
+                                                                    ],
+                                                         "attemptToConvertTypes":  false,
+                                                         "convertFieldsToString":  false
+                                                     },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.googleSheets",
+                      "typeVersion":  4.7,
+                      "position":  [
+                                       512,
+                                       320
+                                   ],
+                      "id":  "021147df-86ef-4625-be0e-7fee05a5b30d",
+                      "name":  "Store Cold Leads"
+                  },
+                  {
+                      "parameters":  {
+                                         "calendar":  {
+                                                          "__rl":  true,
+                                                          "value":  "247be82d8baa5484503c99a689766a08fe590751a44b2ed2c33dee21eff77127@group.calendar.google.com",
+                                                          "mode":  "list",
+                                                          "cachedResultName":  "Smart CRM Portal"
+                                                      },
+                                         "start":  "={{ new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() }}",
+                                         "end":  "={{ new Date(Date.now() + 25 * 60 * 60 * 1000).toISOString() }}",
+                                         "useDefaultReminders":  false,
+                                         "additionalFields":  {
+                                                                  "attendees":  [
+                                                                                    "={{ $json.Email }}"
+                                                                                ],
+                                                                  "description":  "={{ $json.Summary }}",
+                                                                  "showMeAs":  "transparent",
+                                                                  "summary":  "=Discovery Call  –  {{ $json.Name }}"
+                                                              }
+                                     },
+                      "type":  "n8n-nodes-base.googleCalendar",
+                      "typeVersion":  1.3,
+                      "position":  [
+                                       192,
+                                       -64
+                                   ],
+                      "id":  "30bb5656-0510-477d-9ccb-7e311cee5c5e",
+                      "name":  "Create an event"
+                  },
+                  {
+                      "parameters":  {
+                                         "conditions":  {
+                                                            "options":  {
+                                                                            "caseSensitive":  true,
+                                                                            "leftValue":  "",
+                                                                            "typeValidation":  "strict",
+                                                                            "version":  2
+                                                                        },
+                                                            "conditions":  [
+                                                                               {
+                                                                                   "id":  "1853260d-8195-478c-86a1-b72d0554af29",
+                                                                                   "leftValue":  "={{ $json.Category }}",
+                                                                                   "rightValue":  "=Hot",
+                                                                                   "operator":  {
+                                                                                                    "type":  "string",
+                                                                                                    "operation":  "equals",
+                                                                                                    "name":  "filter.operator.equals"
+                                                                                                }
+                                                                               }
+                                                                           ],
+                                                            "combinator":  "or"
+                                                        },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.if",
+                      "typeVersion":  2.2,
+                      "position":  [
+                                       -32,
+                                       32
+                                   ],
+                      "id":  "0e791474-750e-4369-9568-008f77842e9f",
+                      "name":  "If Hot Lead"
+                  },
+                  {
+                      "parameters":  {
+                                         "conditions":  {
+                                                            "options":  {
+                                                                            "caseSensitive":  true,
+                                                                            "leftValue":  "",
+                                                                            "typeValidation":  "strict",
+                                                                            "version":  2
+                                                                        },
+                                                            "conditions":  [
+                                                                               {
+                                                                                   "id":  "a98fafce-b3f4-4048-a885-7bddb432dd89",
+                                                                                   "leftValue":  "={{ $json.Category }}",
+                                                                                   "rightValue":  "Warm",
+                                                                                   "operator":  {
+                                                                                                    "type":  "string",
+                                                                                                    "operation":  "equals",
+                                                                                                    "name":  "filter.operator.equals"
+                                                                                                }
+                                                                               }
+                                                                           ],
+                                                            "combinator":  "and"
+                                                        },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.if",
+                      "typeVersion":  2.2,
+                      "position":  [
+                                       192,
+                                       128
+                                   ],
+                      "id":  "6420eab6-909a-49fa-a843-e68f4b09dd83",
+                      "name":  "If Warm Lead"
+                  }
+              ],
+    "pinData":  {
+
+                },
+    "connections":  {
+                        "Google Sheets Trigger":  {
+                                                      "main":  [
+                                                                   [
+                                                                       {
+                                                                           "node":  "If Hot Lead",
+                                                                           "type":  "main",
+                                                                           "index":  0
+                                                                       }
+                                                                   ]
+                                                               ]
+                                                  },
+                        "Hot Lead Message":  {
+                                                 "main":  [
+                                                              [
+
+                                                              ]
+                                                          ]
+                                             },
+                        "Wait":  {
+                                     "main":  [
+                                                  [
+                                                      {
+                                                          "node":  "Warm Lead Message",
+                                                          "type":  "main",
+                                                          "index":  0
+                                                      }
+                                                  ]
+                                              ]
+                                 },
+                        "Create an event":  {
+                                                "main":  [
+                                                             [
+                                                                 {
+                                                                     "node":  "Hot Lead Message",
+                                                                     "type":  "main",
+                                                                     "index":  0
+                                                                 }
+                                                             ]
+                                                         ]
+                                            },
+                        "If Hot Lead":  {
+                                            "main":  [
+                                                         [
+                                                             {
+                                                                 "node":  "Create an event",
+                                                                 "type":  "main",
+                                                                 "index":  0
+                                                             }
+                                                         ],
+                                                         [
+                                                             {
+                                                                 "node":  "If Warm Lead",
+                                                                 "type":  "main",
+                                                                 "index":  0
+                                                             }
+                                                         ]
+                                                     ]
+                                        },
+                        "If Warm Lead":  {
+                                             "main":  [
+                                                          [
+                                                              {
+                                                                  "node":  "Wait",
+                                                                  "type":  "main",
+                                                                  "index":  0
+                                                              }
+                                                          ],
+                                                          [
+                                                              {
+                                                                  "node":  "Store Cold Leads",
+                                                                  "type":  "main",
+                                                                  "index":  0
+                                                              }
+                                                          ]
+                                                      ]
+                                         }
+                    },
+    "active":  false,
+    "settings":  {
+                     "executionOrder":  "v1"
+                 },
+    "versionId":  "2ec272d3-ab02-4102-b5aa-36594ebb792e",
+    "meta":  {
+                 "templateCredsSetupCompleted":  true,
+                 "instanceId":  "6ed31fb7c0dd6fba0122cd34e33ec48e6c9d473b90dd61cef58072f5aa0d15a6"
+             },
+    "id":  "oCksqg8sIXXHKFdA",
+    "tags":  [
+
+             ]
+}
