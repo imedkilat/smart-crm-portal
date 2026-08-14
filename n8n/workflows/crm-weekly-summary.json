@@ -1,0 +1,214 @@
+{
+    "name":  "Smart CRM Portal - CRM Weekly Summary",
+    "nodes":  [
+                  {
+                      "parameters":  {
+                                         "rule":  {
+                                                      "interval":  [
+                                                                       {
+                                                                           "triggerAtHour":  8
+                                                                       }
+                                                                   ]
+                                                  }
+                                     },
+                      "type":  "n8n-nodes-base.scheduleTrigger",
+                      "typeVersion":  1.2,
+                      "position":  [
+                                       -304,
+                                       -16
+                                   ],
+                      "id":  "016529ba-ebcf-4c90-866b-63946e00cfcb",
+                      "name":  "Schedule Trigger"
+                  },
+                  {
+                      "parameters":  {
+                                         "documentId":  {
+                                                            "__rl":  true,
+                                                            "value":  "1ZMOWZsPAs47m6gOOF1gdVdI5YMq0EPzWX-zn6ybkpZ4",
+                                                            "mode":  "list",
+                                                            "cachedResultName":  "Smart CRM Portal - Leads Database",
+                                                            "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1ZMOWZsPAs47m6gOOF1gdVdI5YMq0EPzWX-zn6ybkpZ4/edit?usp=drivesdk"
+                                                        },
+                                         "sheetName":  {
+                                                           "__rl":  true,
+                                                           "value":  "gid=0",
+                                                           "mode":  "list",
+                                                           "cachedResultName":  "RawLeads",
+                                                           "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1ZMOWZsPAs47m6gOOF1gdVdI5YMq0EPzWX-zn6ybkpZ4/edit#gid=0"
+                                                       },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.googleSheets",
+                      "typeVersion":  4.7,
+                      "position":  [
+                                       -96,
+                                       -16
+                                   ],
+                      "id":  "1ed7ddd8-27ba-48d7-92d2-dbe4693ef684",
+                      "name":  "Get row(s) in sheet"
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const data = items.map(item =\u003e item.json);\n\nconst summary = {\n  total: data.length,\n  hot: data.filter(i =\u003e i.Category === \"Hot\").length,\n  warm: data.filter(i =\u003e i.Category === \"Warm\").length,\n  cold: data.filter(i =\u003e i.Category === \"Cold\").length,\n};\n\n// Optional: leads added today\nconst today = new Date().toLocaleDateString(\u0027en-US\u0027);\nsummary.today = data.filter(i =\u003e i.Date === today).length;\n\nreturn [{ json: summary }];\n"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       112,
+                                       -16
+                                   ],
+                      "id":  "49979888-168a-44ef-823d-b4b471cb3fb3",
+                      "name":  "Aggregation Logic"
+                  },
+                  {
+                      "parameters":  {
+                                         "promptType":  "define",
+                                         "text":  "=You are Smart CRM’s Business Analyst AI, responsible for creating a structured weekly summary from CRM lead data.\nYou receive input from a function node in the format:\n\n[{\n  \"total\": number,\n  \"hot\": number,\n  \"warm\": number,\n  \"cold\": number,\n  \"today\": number\n}]\n\n\nYour task is to analyze these values and produce a JSON output containing all placeholders needed for the Smart CRM weekly email.\nThis report must be client-facing, data-driven, and professionally written, using natural, friendly business language (no technical jargon).\n\n🧾 Expected JSON Output Format\n\nYour output must strictly follow this JSON structure:\n\n{\n  \"dateRange\": \"October 6 – October 12, 2025\",\n  \"newLeads\": 12,\n  \"totalLeads\": 68,\n  \"hotLeads\": 30,\n  \"warmLeads\": 25,\n  \"coldLeads\": 13,\n  \"totalChange\": \"+8\",\n  \"hotChange\": \"+10\",\n  \"warmChange\": \"-3\",\n  \"coldChange\": \"-5\",\n  \"hotPercent\": 44.1,\n  \"insight1\": \"Hot leads represent 44% of all leads, showing strong buyer intent.\",\n  \"insight2\": \"Warm leads remain stable, suggesting consistent engagement.\",\n  \"insight3\": \"Cold leads decreased slightly, implying improved targeting accuracy.\",\n  \"recommendation1\": \"Focus follow-ups on warm leads within 48 hours to increase conversions.\",\n  \"recommendation2\": \"Allocate more budget toward channels producing hot leads.\",\n  \"recommendation3\": \"Re-engage cold leads with personalized offers or retargeting ads.\",\n  \"aiCommentary\": \"A productive week overall! 🔥 Hot leads are holding strong, and engagement across channels looks healthy. Keep nurturing your warm prospects—next week could show even higher conversions.\"\n}\n\n📘 Guidelines\n\nLead Overview (Data Mapping):\n\nUse the input JSON values to populate the totals and percentages.\n\nCalculate percentages such as\nhotPercent = (hot / total) * 100\n\nIf past-week data isn’t available, simulate a small percentage change for realism.\n\nKey Insights:\n\nProvide 2–3 concise findings written as client-facing sentences.\n\nFocus on trends in Hot/Warm/Cold proportions and engagement quality.\n\nRecommendations:\n\nProvide 2–3 actionable suggestions in natural tone (short, strong verbs: “Focus”, “Re-engage”, “Prioritize”, etc.).\n\nAll must relate to improving conversions or lead nurturing.\n\nAI Commentary:\n\nWrite 2–3 friendly sentences in Smart CRM’s “voice”:\n→ Confident, upbeat, lightly conversational.\n→ Include one positive note and one suggested improvement.\n→ Add 1 relevant emoji if appropriate (🔥, 🌤, 🧊, 💼, 💪).\n\nTone and Length:\n\nOutput must be JSON only (no markdown).\n\nEach text field (insight, recommendation, aiCommentary) should be short — under 2 sentences each.\n\nKeep it between 150–250 words total across all sections.\n\nPurpose:\n\nYour JSON will be parsed by n8n to populate an automated email report sent to clients.\n\nEnsure all keys match the placeholders in the Smart CRM email template exactly.",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.agent",
+                      "typeVersion":  2.2,
+                      "position":  [
+                                       320,
+                                       -16
+                                   ],
+                      "id":  "a030a3ce-5027-4539-b5aa-c28355723f9e",
+                      "name":  "AI Agent"
+                  },
+                  {
+                      "parameters":  {
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       320,
+                                       176
+                                   ],
+                      "id":  "54dbcd93-be46-484b-9f10-5179714ba982",
+                      "name":  "Google Gemini Chat Model"
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "// 🧠 Smart CRM AI Report Parser (JSON-based Version)\n// Handles outputs where the AI wraps valid JSON in markdown code blocks\n\n// Step 1️⃣: Extract raw output from AI node\nlet rawOutput = $json[\"output\"] || ($json[0] \u0026\u0026 $json[0].output) || \"\";\nif (!rawOutput) {\n  return [{ json: { error: \"No AI output received.\" } }];\n}\n\n// Step 2️⃣: Remove markdown fences and clean whitespace\nlet cleanText = rawOutput\n  .replace(/```json/gi, \"\")\n  .replace(/```/g, \"\")\n  .trim();\n\n// Step 3️⃣: Try parsing as JSON\nlet parsed;\ntry {\n  parsed = JSON.parse(cleanText);\n} catch (err) {\n  return [{ json: { error: \"Failed to parse JSON from AI output\", rawOutput: cleanText } }];\n}\n\n// Step 4️⃣: Normalize key naming (for consistency with your email template)\nconst result = {\n  dateRange: parsed.dateRange || \"\",\n  newLeads: parsed.newLeads || 0,\n  totalLeads: parsed.totalLeads || 0,\n  hotLeads: parsed.hotLeads || 0,\n  warmLeads: parsed.warmLeads || 0,\n  coldLeads: parsed.coldLeads || 0,\n  totalChange: parsed.totalChange || \"0\",\n  hotChange: parsed.hotChange || \"0\",\n  warmChange: parsed.warmChange || \"0\",\n  coldChange: parsed.coldChange || \"0\",\n  hotPercent: parsed.hotPercent || 0,\n  insight1: parsed.insight1 || \"\",\n  insight2: parsed.insight2 || \"\",\n  insight3: parsed.insight3 || \"\",\n  recommendation1: parsed.recommendation1 || \"\",\n  recommendation2: parsed.recommendation2 || \"\",\n  recommendation3: parsed.recommendation3 || \"\",\n  aiCommentary: parsed.aiCommentary || \"\",\n};\n\n// Step 5️⃣: Return structured data for HTML or email nodes\nreturn [{ json: result }];"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       672,
+                                       -16
+                                   ],
+                      "id":  "b8928cfc-8237-4174-8334-c8e74e46eb14",
+                      "name":  "Code in JavaScript"
+                  },
+                  {
+                      "parameters":  {
+                                         "sendTo":  "imedkilat@gmail.com",
+                                         "subject":  "=Smart CRM Portal Report",
+                                         "message":  "=\u003c!DOCTYPE html\u003e\n\u003chtml lang=\"en\"\u003e\n\u003chead\u003e\n  \u003cmeta charset=\"UTF-8\" /\u003e\n  \u003cmeta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" /\u003e\n  \u003ctitle\u003eWeekly CRM Report\u003c/title\u003e\n  \u003cstyle\u003e\n    body {\n      font-family: \u0027Inter\u0027, -apple-system, BlinkMacSystemFont, sans-serif;\n      background: linear-gradient(180deg, #f0f4f8 0%, #e0e7f0 100%);\n      color: #1a1a1a;\n      margin: 0;\n      padding: 2rem 1rem;\n      line-height: 1.6;\n    }\n    .crm-container {\n      max-width: 700px;\n      background: #ffffff;\n      margin: 0 auto;\n      border-radius: 20px;\n      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.06), 0 4px 12px rgba(0, 0, 0, 0.04);\n      overflow: hidden;\n      border: 1px solid #e0e6ed;\n      animation: fadeIn 0.5s ease-in-out;\n    }\n    @keyframes fadeIn {\n      from { opacity: 0; transform: translateY(20px); }\n      to { opacity: 1; transform: translateY(0); }\n    }\n    .crm-header {\n      background: linear-gradient(135deg, #2a6fd6 0%, #4ea5f5 100%);\n      color: #ffffff;\n      padding: 2.5rem;\n      text-align: center;\n      position: relative;\n      overflow: hidden;\n    }\n    .crm-header::before {\n      content: \u0027\u0027;\n      position: absolute;\n      top: 0;\n      left: -100%;\n      width: 200%;\n      height: 100%;\n      background: radial-gradient(circle, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0) 70%);\n      animation: glow 6s infinite;\n    }\n    @keyframes glow {\n      0% { left: -100%; }\n      20% { left: 0; }\n      100% { left: 100%; }\n    }\n    .crm-header h1 {\n      margin: 0;\n      font-size: 2rem;\n      font-weight: 800;\n      letter-spacing: -0.03em;\n      text-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);\n    }\n    .crm-period {\n      font-size: 1rem;\n      opacity: 0.9;\n      margin-top: 0.6rem;\n      font-weight: 400;\n      color: #ffffff;\n    }\n    .crm-section {\n      padding: 2.2rem 2.8rem;\n      border-bottom: 1px solid #eef2f7;\n      transition: all 0.3s ease;\n    }\n    .crm-section:hover {\n      background: #fafbfd;\n    }\n    .crm-section:last-child {\n      border-bottom: none;\n    }\n    .crm-section h2 {\n      font-size: 1.4rem;\n      font-weight: 700;\n      margin: 0 0 1.2rem;\n      color: #2a6fd6;\n      position: relative;\n      padding-left: 0.8rem;\n      border-left: 4px solid #2a6fd6;\n    }\n    .crm-summary {\n      font-size: 1.1rem;\n      line-height: 1.8;\n      color: #2d3748;\n    }\n    .crm-summary strong {\n      color: #2a6fd6;\n      font-weight: 600;\n    }\n    table {\n      width: 100%;\n      border-collapse: separate;\n      border-spacing: 0;\n      margin: 1.2rem 0;\n      background: #f9fbfd;\n      border-radius: 12px;\n      overflow: hidden;\n    }\n    th, td {\n      padding: 1.2rem;\n      font-size: 1rem;\n      text-align: left;\n      border-bottom: 1px solid #e0e6ed;\n    }\n    th {\n      background: #f1f5fa;\n      color: #4a5568;\n      font-weight: 600;\n      text-transform: uppercase;\n      font-size: 0.9rem;\n    }\n    td {\n      color: #2d3748;\n    }\n    tr:last-child td {\n      border-bottom: none;\n    }\n    ul {\n      padding-left: 1.8rem;\n      margin: 0.8rem 0;\n      color: #2d3748;\n    }\n    ul li {\n      margin-bottom: 0.7rem;\n      position: relative;\n      padding-left: 0.9rem;\n    }\n    ul li::before {\n      content: \u0027›\u0027;\n      color: #2a6fd6;\n      position: absolute;\n      left: -0.2rem;\n      font-weight: 700;\n    }\n    .crm-ai-comment {\n      background: #f0f7ff;\n      border-left: 5px solid #2a6fd6;\n      padding: 1.5rem 1.8rem;\n      border-radius: 10px;\n      font-style: italic;\n      color: #2d3748;\n      margin: 1.5rem 0;\n      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);\n      transition: transform 0.3s ease;\n    }\n    .crm-ai-comment:hover {\n      transform: translateX(8px);\n    }\n    .crm-footer {\n      text-align: center;\n      padding: 1.8rem;\n      font-size: 0.95rem;\n      color: #6b7280;\n      background: #f8fafc;\n      border-top: 1px solid #e0e6ed;\n    }\n    .crm-footer strong {\n      color: #2a6fd6;\n      font-weight: 600;\n    }\n    @media (max-width: 600px) {\n      .crm-container {\n        margin: 0 1rem;\n        border-radius: 16px;\n      }\n      .crm-section {\n        padding: 1.8rem;\n      }\n      .crm-header h1 {\n        font-size: 1.6rem;\n      }\n      th, td {\n        padding: 0.9rem;\n        font-size: 0.9rem;\n      }\n    }\n  \u003c/style\u003e\n\u003c/head\u003e\n\u003cbody\u003e\n  \u003cdiv class=\"crm-container\"\u003e\n    \u003cdiv class=\"crm-header\"\u003e\n      \u003ch1\u003eWeekly CRM Performance Summary\u003c/h1\u003e\n      \u003cp class=\"crm-period\"\u003ePeriod: {{ $json.dateRange }}\u003c/p\u003e\n    \u003c/div\u003e\n\n    \u003cdiv class=\"crm-section\"\u003e\n      \u003ch2\u003eOverview\u003c/h2\u003e\n      \u003cp class=\"crm-summary\"\u003e\n        This week, \u003cstrong\u003e{{ $json.newLeads }}\u003c/strong\u003e new leads were added. \n        Hot leads make up \u003cstrong\u003e{{ $json.hotPercent }}%\u003c/strong\u003e of your total, showing solid engagement.\n        Cold leads decreased by \u003cstrong\u003e{{ $json.coldChange }}%\u003c/strong\u003e compared to last week.\n      \u003c/p\u003e\n    \u003c/div\u003e\n\n    \u003cdiv class=\"crm-section\"\u003e\n      \u003ch2\u003eKey Stats\u003c/h2\u003e\n      \u003ctable\u003e\n        \u003ctr\u003e\u003cth\u003eMetric\u003c/th\u003e\u003cth\u003eValue\u003c/th\u003e\u003cth\u003eChange\u003c/th\u003e\u003c/tr\u003e\n        \u003ctr\u003e\u003ctd\u003eTotal Leads\u003c/td\u003e\u003ctd\u003e{{ $json.totalLeads }}\u003c/td\u003e\u003ctd\u003e{{ $json.totalChange }}%\u003c/td\u003e\u003c/tr\u003e\n        \u003ctr\u003e\u003ctd\u003eHot Leads\u003c/td\u003e\u003ctd\u003e{{ $json.hotLeads }}\u003c/td\u003e\u003ctd\u003e{{ $json.hotChange }}%\u003c/td\u003e\u003c/tr\u003e\n        \u003ctr\u003e\u003ctd\u003eWarm Leads\u003c/td\u003e\u003ctd\u003e{{ $json.warmLeads }}\u003c/td\u003e\u003ctd\u003e{{ $json.warmChange }}%\u003c/td\u003e\u003c/tr\u003e\n        \u003ctr\u003e\u003ctd\u003eCold Leads\u003c/td\u003e\u003ctd\u003e{{ $json.coldLeads }}\u003c/td\u003e\u003ctd\u003e{{ $json.coldChange }}%\u003c/td\u003e\u003c/tr\u003e\n      \u003c/table\u003e\n    \u003c/div\u003e\n\n    \u003cdiv class=\"crm-section\"\u003e\n      \u003ch2\u003eKey Insights\u003c/h2\u003e\n      \u003cul\u003e\n        \u003cli\u003e{{ $json.insight1 }}\u003c/li\u003e\n        \u003cli\u003e{{ $json.insight2 }}\u003c/li\u003e\n        \u003cli\u003e{{ $json.insight3 }}\u003c/li\u003e\n      \u003c/ul\u003e\n    \u003c/div\u003e\n\n    \u003cdiv class=\"crm-section\"\u003e\n      \u003ch2\u003eRecommendations\u003c/h2\u003e\n      \u003cul\u003e\n        \u003cli\u003e{{ $json.recommendation1 }}\u003c/li\u003e\n        \u003cli\u003e{{ $json.recommendation2 }}\u003c/li\u003e\n        \u003cli\u003e{{ $json.recommendation3 }}\u003c/li\u003e\n      \u003c/ul\u003e\n    \u003c/div\u003e\n\n    \u003cdiv class=\"crm-section\"\u003e\n      \u003ch2\u003eSmart CRM Says 💬\u003c/h2\u003e\n      \u003cdiv class=\"crm-ai-comment\"\u003e\n        {{ $json.aiCommentary }}\n      \u003c/div\u003e\n    \u003c/div\u003e\n\n    \u003cdiv class=\"crm-footer\"\u003e\n      Generated automatically by \u003cstrong\u003eSmart CRM Portal\u003c/strong\u003e\u003cbr /\u003e\n      Data powered by SheetBest · n8n · OpenAI\n    \u003c/div\u003e\n  \u003c/div\u003e\n\u003c/body\u003e\n\u003c/html\u003e",
+                                         "options":  {
+                                                         "appendAttribution":  false
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.gmail",
+                      "typeVersion":  2.1,
+                      "position":  [
+                                       880,
+                                       -16
+                                   ],
+                      "id":  "2e0a3f7e-8624-4a94-9073-b1e1286c0a87",
+                      "name":  "Send a message",
+                      "webhookId":  "29ce2795-d747-450c-af35-fce230d1607f"
+                  }
+              ],
+    "pinData":  {
+
+                },
+    "connections":  {
+                        "Schedule Trigger":  {
+                                                 "main":  [
+                                                              [
+                                                                  {
+                                                                      "node":  "Get row(s) in sheet",
+                                                                      "type":  "main",
+                                                                      "index":  0
+                                                                  }
+                                                              ]
+                                                          ]
+                                             },
+                        "Get row(s) in sheet":  {
+                                                    "main":  [
+                                                                 [
+                                                                     {
+                                                                         "node":  "Aggregation Logic",
+                                                                         "type":  "main",
+                                                                         "index":  0
+                                                                     }
+                                                                 ]
+                                                             ]
+                                                },
+                        "Aggregation Logic":  {
+                                                  "main":  [
+                                                               [
+                                                                   {
+                                                                       "node":  "AI Agent",
+                                                                       "type":  "main",
+                                                                       "index":  0
+                                                                   }
+                                                               ]
+                                                           ]
+                                              },
+                        "Google Gemini Chat Model":  {
+                                                         "ai_languageModel":  [
+                                                                                  [
+                                                                                      {
+                                                                                          "node":  "AI Agent",
+                                                                                          "type":  "ai_languageModel",
+                                                                                          "index":  0
+                                                                                      }
+                                                                                  ]
+                                                                              ]
+                                                     },
+                        "AI Agent":  {
+                                         "main":  [
+                                                      [
+                                                          {
+                                                              "node":  "Code in JavaScript",
+                                                              "type":  "main",
+                                                              "index":  0
+                                                          }
+                                                      ]
+                                                  ]
+                                     },
+                        "Code in JavaScript":  {
+                                                   "main":  [
+                                                                [
+                                                                    {
+                                                                        "node":  "Send a message",
+                                                                        "type":  "main",
+                                                                        "index":  0
+                                                                    }
+                                                                ]
+                                                            ]
+                                               }
+                    },
+    "active":  false,
+    "settings":  {
+                     "executionOrder":  "v1"
+                 },
+    "versionId":  "4b2be465-1831-43bb-8208-01782a753c07",
+    "meta":  {
+                 "templateCredsSetupCompleted":  true,
+                 "instanceId":  "6ed31fb7c0dd6fba0122cd34e33ec48e6c9d473b90dd61cef58072f5aa0d15a6"
+             },
+    "id":  "uGYUyK1wLYRotg4y",
+    "tags":  [
+
+             ]
+}
