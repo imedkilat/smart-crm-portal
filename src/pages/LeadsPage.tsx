@@ -62,6 +62,7 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
     const { data, error: loadError } = await supabase
       .from('leads')
       .select('*')
+      .is('archived_at', null)
       .order('created_at', { ascending: false })
 
     if (loadError) {
