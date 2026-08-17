@@ -8,6 +8,10 @@ type RoutingEvent = Database['public']['Tables']['lead_routing_history']['Row']
 type ResultFilter = 'all' | 'accepted' | 'suppressed_24h' | 'failed'
 type RouteFilter = 'all' | 'Hot' | 'Warm' | 'Cold'
 
+type Props = {
+  onLeadUpdated?: (lead: Lead) => void
+}
+
 function resultLabel(value: string) {
   if (value === 'accepted') return 'Started'
   if (value === 'suppressed_24h') return 'Suppressed'
@@ -29,7 +33,7 @@ function routeClass(value: string | null) {
   return 'cold'
 }
 
-export default function AutomationPage() {
+export default function AutomationPage({ onLeadUpdated }: Props) {
   const [events, setEvents] = useState<RoutingEvent[]>([])
   const [leads, setLeads] = useState<Lead[]>([])
   const [loading, setLoading] = useState(true)
@@ -84,6 +88,7 @@ export default function AutomationPage() {
   function handleLeadUpdated(updatedLead: Lead) {
     setLeads((current) => current.map((lead) => lead.id === updatedLead.id ? updatedLead : lead))
     setSelectedLead(updatedLead)
+    onLeadUpdated?.(updatedLead)
   }
 
   return (
