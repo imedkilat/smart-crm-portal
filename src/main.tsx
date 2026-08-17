@@ -1,7 +1,6 @@
 import { StrictMode, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App'
-import GlobalSearch from './components/GlobalSearch'
 import Login from './pages/Login'
 import ResetPassword from './pages/ResetPassword'
 import { signOut } from './lib/auth'
@@ -118,7 +117,6 @@ function AuthRouter() {
   return (
     <>
       <App />
-      <GlobalSearch />
       <button
         className="session-signout"
         type="button"
