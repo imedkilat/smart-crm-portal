@@ -11,6 +11,7 @@ import SettingsPage from './pages/SettingsPage'
 import './analytics.css'
 import './crm-pages.css'
 import './system-pages.css'
+import './leads-new.css'
 
 type Lead = Database['public']['Tables']['leads']['Row']
 type WeeklySummary = Database['public']['Tables']['weekly_summary']['Row']
@@ -21,6 +22,8 @@ type NavItem = {
   label: string
   icon: string
 }
+
+const NEW_LEAD_WINDOW_MS = 30 * 60 * 1000
 
 const navItems: NavItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: '⌂' },
@@ -81,6 +84,25 @@ function percent(value: number, total: number) {
 
 function sortNewest(rows: Lead[]) {
   return [...rows].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+}
+
+function leadCreatedAt(lead: Lead) {
+  const timestamp = new Date(lead.created_at).getTime()
+  return Number.isFinite(timestamp) ? timestamp : 0
+}
+
+function isNewLead(lead: Lead, now = Date.now()) {
+  const createdAt = leadCreatedAt(lead)
+  if (!createdAt) return false
+  const age = now - createdAt
+  return age >= 0 && age <= NEW_LEAD_WINDOW_MS
+}
+
+function freshnessLabel(lead: Lead, now = Date.now()) {
+  const age = Math.max(0, now - leadCreatedAt(lead))
+  const minutes = Math.floor(age / 60000)
+  if (minutes <= 1) return 'Just added'
+  return `${minutes}m ago`
 }
 
 export default function App() {
@@ -291,6 +313,13 @@ function DashboardPage({
   setPage: (page: Page) => void
   onOpenLead: (lead: Lead) => void
 }) {
+  const [freshnessNow, setFreshnessNow] = useState(() => Date.now())
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setFreshnessNow(Date.now()), 60_000)
+    return () => window.clearInterval(timer)
+  }, [])
+
   return (
     <>
       <section className="page-heading">
@@ -415,10 +444,11 @@ function DashboardPage({
             <tbody>
               {recentLeads.map((lead) => {
                 const routing = statusValue(lead)
+                const newLead = isNewLead(lead, freshnessNow)
                 return (
                   <tr
                     key={lead.id}
-                    className="lead-table-row"
+                    className={`lead-table-row ${newLead ? 'is-new-lead' : ''}`}
                     tabIndex={0}
                     onClick={() => onOpenLead(lead)}
                     onKeyDown={(event) => {
@@ -432,14 +462,25 @@ function DashboardPage({
                     <td>
                       <div className="lead-cell">
                         <span className="avatar">{initials(lead.name)}</span>
-                        <div><strong>{lead.name || 'Unnamed lead'}</strong><span>{lead.email || 'No email'}</span></div>
+                        <div>
+                          <div className="lead-name-line">
+                            <strong>{lead.name || 'Unnamed lead'}</strong>
+                            {newLead && <span className="new-lead-badge"><i />New</span>}
+                          </div>
+                          <span>{lead.email || 'No email'}</span>
+                        </div>
                       </div>
                     </td>
                     <td>{lead.intent || '—'}</td>
                     <td><span className={`category-pill ${categoryClass(routing)}`}><i />{routing}</span></td>
                     <td>{lead.budget ? money(parseBudget(lead.budget)) : '—'}</td>
                     <td>{lead.source || '—'}</td>
-                    <td>{new Date(lead.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</td>
+                    <td>
+                      <div className="lead-added-cell">
+                        <span>{new Date(lead.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                        {newLead && <small>{freshnessLabel(lead, freshnessNow)}</small>}
+                      </div>
+                    </td>
                   </tr>
                 )
               })}
