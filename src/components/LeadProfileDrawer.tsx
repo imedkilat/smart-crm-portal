@@ -4,6 +4,7 @@ import type { Database } from '../types/database'
 import '../lead-drawer.css'
 
 type Lead = Database['public']['Tables']['leads']['Row']
+type RoutingHistory = Database['public']['Tables']['lead_routing_history']['Row']
 
 type Props = {
   lead: Lead
@@ -21,6 +22,8 @@ type EditForm = {
 const STATUS_WEBHOOK_URL =
   import.meta.env.VITE_N8N_STATUS_WEBHOOK_URL ||
   'https://tolakautomations.app.n8n.cloud/webhook-test/smart-crm-status-route'
+
+const AUTOMATION_COOLDOWN_MS = 24 * 60 * 60 * 1000
 
 function initials(name: string | null) {
   if (!name) return '—'
@@ -61,6 +64,13 @@ function toEditForm(lead: Lead): EditForm {
   }
 }
 
+function routingResultLabel(item: RoutingHistory) {
+  if (item.automation_result === 'accepted') return 'Automation started'
+  if (item.automation_result === 'suppressed_24h') return 'Automation suppressed'
+  if (item.automation_result === 'failed') return 'Automation failed'
+  return item.automation_result.replace(/_/g, ' ')
+}
+
 export default function LeadProfileDrawer({ lead, onClose, onUpdated }: Props) {
   const [currentLead, setCurrentLead] = useState(lead)
   const [editing, setEditing] = useState(false)
@@ -70,11 +80,17 @@ export default function LeadProfileDrawer({ lead, onClose, onUpdated }: Props) {
   const [message, setMessage] = useState<string | null>(null)
   const [warning, setWarning] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [routingHistory, setRoutingHistory] = useState<RoutingHistory[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
 
   useEffect(() => {
     setCurrentLead(lead)
     setEditForm(toEditForm(lead))
   }, [lead])
+
+  useEffect(() => {
+    void loadRoutingHistory(lead.id)
+  }, [lead.id])
 
   useEffect(() => {
     function onEscape(event: KeyboardEvent) {
@@ -93,6 +109,20 @@ export default function LeadProfileDrawer({ lead, onClose, onUpdated }: Props) {
     return () => window.removeEventListener('keydown', onEscape)
   }, [editing, currentLead, onClose])
 
+  async function loadRoutingHistory(leadId: number) {
+    if (!supabase) return
+    setHistoryLoading(true)
+    const { data } = await supabase
+      .from('lead_routing_history')
+      .select('*')
+      .eq('lead_id', leadId)
+      .order('changed_at', { ascending: false })
+      .limit(6)
+
+    setRoutingHistory((data || []) as RoutingHistory[])
+    setHistoryLoading(false)
+  }
+
   async function refreshRecord() {
     if (!supabase) return
     setRefreshing(true)
@@ -110,17 +140,19 @@ export default function LeadProfileDrawer({ lead, onClose, onUpdated }: Props) {
       setCurrentLead(fresh)
       setEditForm(toEditForm(fresh))
       onUpdated(fresh)
+      await loadRoutingHistory(fresh.id)
       setMessage('Record refreshed')
     }
     setRefreshing(false)
   }
 
-  async function triggerStatusAutomation(previousStatus: string, updatedLead: Lead) {
+  async function triggerStatusAutomation(previousStatus: string, updatedLead: Lead, eventId: string) {
     const response = await fetch(STATUS_WEBHOOK_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         event: 'routing_status_changed',
+        event_id: eventId,
         lead_id: updatedLead.id,
         previous_status: previousStatus,
         routing_status: updatedLead.routing_status,
@@ -140,6 +172,43 @@ export default function LeadProfileDrawer({ lead, onClose, onUpdated }: Props) {
     if (!response.ok) throw new Error(`n8n returned ${response.status}`)
   }
 
+  async function logRoutingEvent(params: {
+    eventKey: string
+    leadId: number
+    fromStatus: string
+    toStatus: string
+    changedAt: string
+    automationTriggered: boolean
+    automationResult: string
+  }) {
+    if (!supabase) return
+    await supabase.from('lead_routing_history').insert({
+      event_key: params.eventKey,
+      lead_id: params.leadId,
+      from_status: params.fromStatus,
+      to_status: params.toStatus,
+      changed_at: params.changedAt,
+      automation_triggered: params.automationTriggered,
+      automation_result: params.automationResult,
+    })
+  }
+
+  async function recentlyAutomated(leadId: number, toStatus: string) {
+    if (!supabase) return false
+    const cutoff = new Date(Date.now() - AUTOMATION_COOLDOWN_MS).toISOString()
+    const { data } = await supabase
+      .from('lead_routing_history')
+      .select('id')
+      .eq('lead_id', leadId)
+      .eq('to_status', toStatus)
+      .eq('automation_triggered', true)
+      .eq('automation_result', 'accepted')
+      .gte('changed_at', cutoff)
+      .limit(1)
+
+    return Boolean(data?.length)
+  }
+
   async function saveLead(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!supabase) return
@@ -152,13 +221,14 @@ export default function LeadProfileDrawer({ lead, onClose, onUpdated }: Props) {
     const previousStatus = statusValue(currentLead)
     const nextStatus = editForm.routing_status.trim() || null
     const routingChanged = (nextStatus || 'Unclassified') !== previousStatus
+    const changedAt = new Date().toISOString()
 
     const updates: Database['public']['Tables']['leads']['Update'] = {
       name: editForm.name.trim() || null,
       email: editForm.email.trim() || null,
       budget: editForm.budget.trim() || null,
       routing_status: nextStatus,
-      ...(routingChanged ? { status_changed_at: new Date().toISOString() } : {}),
+      ...(routingChanged ? { status_changed_at: changedAt } : {}),
     }
 
     const { data, error: updateError } = await supabase
@@ -181,17 +251,53 @@ export default function LeadProfileDrawer({ lead, onClose, onUpdated }: Props) {
     onUpdated(updatedLead)
 
     if (routingChanged && updatedLead.routing_status) {
-      try {
-        await triggerStatusAutomation(previousStatus, updatedLead)
-        setMessage(`Saved and routed as ${updatedLead.routing_status}`)
-      } catch (automationError) {
-        setMessage('Changes saved')
-        setWarning(
-          automationError instanceof Error
-            ? `Routing status changed, but n8n did not start: ${automationError.message}`
-            : 'Routing status changed, but n8n did not start.'
-        )
+      const eventKey = crypto.randomUUID()
+      const duplicateRisk = await recentlyAutomated(updatedLead.id, updatedLead.routing_status)
+
+      if (duplicateRisk) {
+        await logRoutingEvent({
+          eventKey,
+          leadId: updatedLead.id,
+          fromStatus: previousStatus,
+          toStatus: updatedLead.routing_status,
+          changedAt,
+          automationTriggered: false,
+          automationResult: 'suppressed_24h',
+        })
+        setMessage(`Saved as ${updatedLead.routing_status}`)
+        setWarning(`The ${updatedLead.routing_status} automation was not repeated because this lead already ran through the same route within the last 24 hours.`)
+      } else {
+        try {
+          await triggerStatusAutomation(previousStatus, updatedLead, eventKey)
+          await logRoutingEvent({
+            eventKey,
+            leadId: updatedLead.id,
+            fromStatus: previousStatus,
+            toStatus: updatedLead.routing_status,
+            changedAt,
+            automationTriggered: true,
+            automationResult: 'accepted',
+          })
+          setMessage(`Saved and routed as ${updatedLead.routing_status}`)
+        } catch (automationError) {
+          await logRoutingEvent({
+            eventKey,
+            leadId: updatedLead.id,
+            fromStatus: previousStatus,
+            toStatus: updatedLead.routing_status,
+            changedAt,
+            automationTriggered: false,
+            automationResult: 'failed',
+          })
+          setMessage('Changes saved')
+          setWarning(
+            automationError instanceof Error
+              ? `Routing status changed, but n8n did not start: ${automationError.message}`
+              : 'Routing status changed, but n8n did not start.'
+          )
+        }
       }
+      await loadRoutingHistory(updatedLead.id)
     } else {
       setMessage('Changes saved')
     }
@@ -271,6 +377,31 @@ export default function LeadProfileDrawer({ lead, onClose, onUpdated }: Props) {
               <h3>Message</h3>
               <p className="lead-message">{currentLead.message || 'No original message was saved.'}</p>
             </section>
+
+            <section className="lead-drawer-section routing-history-section">
+              <div className="routing-history-heading">
+                <div><span className="mini-label">ROUTING AUDIT</span><h3>Status history</h3></div>
+                <span className="routing-cooldown-pill">24h duplicate guard</span>
+              </div>
+              {historyLoading ? (
+                <p className="routing-history-empty">Loading routing history…</p>
+              ) : routingHistory.length ? (
+                <div className="routing-history-list">
+                  {routingHistory.map((item) => (
+                    <div className="routing-history-item" key={item.id}>
+                      <span className={`routing-history-dot ${categoryClass(item.to_status)}`} />
+                      <div>
+                        <strong>{item.from_status || 'Unclassified'} → {item.to_status}</strong>
+                        <span>{routingResultLabel(item)}</span>
+                      </div>
+                      <time>{new Date(item.changed_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</time>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="routing-history-empty">No routing changes have been logged yet.</p>
+              )}
+            </section>
           </>
         ) : (
           <form className="lead-edit-form" onSubmit={saveLead}>
@@ -292,7 +423,7 @@ export default function LeadProfileDrawer({ lead, onClose, onUpdated }: Props) {
                   <option value="Warm">Warm</option>
                   <option value="Cold">Cold</option>
                 </select>
-                <small className="field-helper">Changing this can trigger the matching n8n route.</small>
+                <small className="field-helper">Changing this can trigger the matching n8n route. Repeating the same route within 24 hours is automatically suppressed.</small>
               </label>
             </div>
 
