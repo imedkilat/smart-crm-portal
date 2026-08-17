@@ -3,8 +3,10 @@ import { createRoot } from 'react-dom/client'
 import App from './App'
 import Login from './pages/Login'
 import ResetPassword from './pages/ResetPassword'
+import { signOut } from './lib/auth'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 import './styles.css'
+import './session.css'
 
 function currentRoute() {
   return window.location.pathname.replace(/\/+$/, '') || '/'
@@ -33,6 +35,7 @@ function AuthRouter() {
   const route = currentRoute()
   const [authReady, setAuthReady] = useState(false)
   const [signedIn, setSignedIn] = useState(false)
+  const [signingOut, setSigningOut] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -88,6 +91,12 @@ function AuthRouter() {
     }
   }, [authReady, route, signedIn])
 
+  async function handleSignOut() {
+    setSigningOut(true)
+    await signOut()
+    setSigningOut(false)
+  }
+
   if (route === '/reset-password') {
     return <ResetPassword />
   }
@@ -104,7 +113,20 @@ function AuthRouter() {
     return <AuthLoading message="Redirecting to sign in…" />
   }
 
-  return <App />
+  return (
+    <>
+      <App />
+      <button
+        className="session-signout"
+        type="button"
+        onClick={handleSignOut}
+        disabled={signingOut}
+        aria-label="Sign out of Smart CRM"
+      >
+        {signingOut ? 'Signing out…' : 'Sign out'}
+      </button>
+    </>
+  )
 }
 
 createRoot(document.getElementById('root')!).render(
