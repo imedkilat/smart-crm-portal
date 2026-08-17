@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from './lib/supabase'
 import type { Database } from './types/database'
+import GlobalSearch from './components/GlobalSearch'
 import LeadProfileDrawer from './components/LeadProfileDrawer'
 import LeadsPage from './pages/LeadsPage'
 import AddLeadPage from './pages/AddLeadPage'
@@ -78,6 +79,10 @@ function percent(value: number, total: number) {
   return total ? Math.round((value / total) * 100) : 0
 }
 
+function sortNewest(rows: Lead[]) {
+  return [...rows].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+}
+
 export default function App() {
   const [page, setPage] = useState<Page>('dashboard')
   const [leads, setLeads] = useState<Lead[]>([])
@@ -87,6 +92,8 @@ export default function App() {
   const [selectedDashboardLead, setSelectedDashboardLead] = useState<Lead | null>(null)
 
   useEffect(() => {
+    if (page !== 'dashboard' && page !== 'analytics') return
+
     let active = true
 
     async function loadDashboard() {
@@ -109,34 +116,44 @@ export default function App() {
       if (leadsResult.error) {
         setError(leadsResult.error.message)
       } else {
-        setLeads(leadsResult.data || [])
+        setLeads((leadsResult.data || []) as Lead[])
       }
 
       if (!weeklyResult.error) {
-        setWeeklySummary(weeklyResult.data?.[0] || null)
+        setWeeklySummary((weeklyResult.data?.[0] as WeeklySummary | undefined) || null)
       }
 
       setLoading(false)
     }
 
-    loadDashboard()
+    void loadDashboard()
     return () => {
       active = false
     }
-  }, [])
+  }, [page])
 
   const handleLeadsLoaded = useCallback((rows: Lead[]) => {
-    setLeads(rows)
+    setLeads(sortNewest(rows.filter((lead) => !lead.archived_at)))
   }, [])
 
-  const handleDashboardLeadUpdated = useCallback((updatedLead: Lead) => {
-    if (updatedLead.archived_at) {
-      setLeads((current) => current.filter((lead) => lead.id !== updatedLead.id))
-      setSelectedDashboardLead(null)
-      return
-    }
-    setLeads((current) => current.map((lead) => lead.id === updatedLead.id ? updatedLead : lead))
-    setSelectedDashboardLead(updatedLead)
+  const handleLeadUpdated = useCallback((updatedLead: Lead) => {
+    setLeads((current) => {
+      if (updatedLead.archived_at) {
+        return current.filter((lead) => lead.id !== updatedLead.id)
+      }
+
+      const exists = current.some((lead) => lead.id === updatedLead.id)
+      const next = exists
+        ? current.map((lead) => lead.id === updatedLead.id ? updatedLead : lead)
+        : [...current, updatedLead]
+
+      return sortNewest(next)
+    })
+
+    setSelectedDashboardLead((current) => {
+      if (current?.id !== updatedLead.id) return current
+      return updatedLead.archived_at ? null : updatedLead
+    })
   }, [])
 
   const metrics = useMemo(() => {
@@ -194,10 +211,7 @@ export default function App() {
 
       <div className="workspace">
         <header className="topbar">
-          <div className="search-box">
-            <span>⌕</span>
-            <input placeholder="Search leads, insights, reports..." aria-label="Search" />
-          </div>
+          <GlobalSearch onLeadUpdated={handleLeadUpdated} />
           <div className="topbar-meta">
             <span className="lead-count">{metrics.total} leads</span>
             <div className="owner-avatar">EK</div>
@@ -230,7 +244,7 @@ export default function App() {
             <AddLeadPage onCreated={() => setPage('leads')} />
           )}
 
-          {page === 'automation' && <AutomationPage />}
+          {page === 'automation' && <AutomationPage onLeadUpdated={handleLeadUpdated} />}
 
           {page === 'analytics' && (
             <AnalyticsPage leads={leads} metrics={metrics} weeklySummary={weeklySummary} loading={loading} />
@@ -238,7 +252,12 @@ export default function App() {
 
           {page === 'reports' && <ReportsPage />}
 
-          {page === 'settings' && <SettingsPage onOpenRunLog={() => setPage('automation')} />}
+          {page === 'settings' && (
+            <SettingsPage
+              onOpenRunLog={() => setPage('automation')}
+              onLeadRestored={handleLeadUpdated}
+            />
+          )}
         </main>
       </div>
 
@@ -246,7 +265,7 @@ export default function App() {
         <LeadProfileDrawer
           lead={selectedDashboardLead}
           onClose={() => setSelectedDashboardLead(null)}
-          onUpdated={handleDashboardLeadUpdated}
+          onUpdated={handleLeadUpdated}
         />
       )}
     </div>
