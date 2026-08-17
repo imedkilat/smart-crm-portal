@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import ArchivePage from './ArchivePage'
 
 const LEAD_WEBHOOK = import.meta.env.VITE_N8N_LEAD_WEBHOOK_URL || 'https://tolakautomations.app.n8n.cloud/webhook/799b1d66-0a5f-44b0-8f43-600ea4775979'
 const STATUS_WEBHOOK = import.meta.env.VITE_N8N_STATUS_WEBHOOK_URL || 'https://tolakautomations.app.n8n.cloud/webhook/smart-crm-status-route'
@@ -21,10 +22,12 @@ export default function SettingsPage({ onOpenRunLog }: Props) {
   const [checking, setChecking] = useState(true)
   const [databaseHealthy, setDatabaseHealthy] = useState(false)
   const [activeLeadCount, setActiveLeadCount] = useState<number | null>(null)
+  const [archivedLeadCount, setArchivedLeadCount] = useState<number | null>(null)
   const [routingEventCount, setRoutingEventCount] = useState<number | null>(null)
   const [ownerEmail, setOwnerEmail] = useState<string | null>(null)
   const [ownerRole, setOwnerRole] = useState<string | null>(null)
   const [checkedAt, setCheckedAt] = useState<Date | null>(null)
+  const [showArchive, setShowArchive] = useState(false)
 
   const checkHealth = useCallback(async () => {
     if (!supabase) {
@@ -34,14 +37,16 @@ export default function SettingsPage({ onOpenRunLog }: Props) {
     }
 
     setChecking(true)
-    const [leadResult, eventResult, userResult] = await Promise.all([
+    const [leadResult, archiveResult, eventResult, userResult] = await Promise.all([
       supabase.from('leads').select('id', { count: 'exact', head: true }).is('archived_at', null),
+      supabase.from('leads').select('id', { count: 'exact', head: true }).not('archived_at', 'is', null),
       supabase.from('lead_routing_history').select('id', { count: 'exact', head: true }),
       supabase.auth.getUser(),
     ])
 
-    setDatabaseHealthy(!leadResult.error && !eventResult.error)
+    setDatabaseHealthy(!leadResult.error && !archiveResult.error && !eventResult.error)
     setActiveLeadCount(leadResult.count ?? null)
+    setArchivedLeadCount(archiveResult.count ?? null)
     setRoutingEventCount(eventResult.count ?? null)
     setOwnerEmail(userResult.data.user?.email || null)
     setOwnerRole((userResult.data.user?.app_metadata?.role as string | undefined) || null)
@@ -50,6 +55,10 @@ export default function SettingsPage({ onOpenRunLog }: Props) {
   }, [])
 
   useEffect(() => { void checkHealth() }, [checkHealth])
+
+  if (showArchive) {
+    return <ArchivePage onBack={() => { setShowArchive(false); void checkHealth() }} />
+  }
 
   return (
     <>
@@ -68,7 +77,7 @@ export default function SettingsPage({ onOpenRunLog }: Props) {
         <article className="panel settings-health-card">
           <div className="settings-card-heading"><span className={`system-dot ${databaseHealthy ? 'ok' : 'bad'}`} /><div><span className="mini-label">DATABASE</span><h2>Supabase</h2></div></div>
           <strong>{checking ? 'Checking connection…' : databaseHealthy ? 'Connected' : 'Needs attention'}</strong>
-          <p>{activeLeadCount ?? '—'} active leads · {routingEventCount ?? '—'} routing events</p>
+          <p>{activeLeadCount ?? '—'} active · {archivedLeadCount ?? '—'} archived · {routingEventCount ?? '—'} routing events</p>
         </article>
 
         <article className="panel settings-health-card">
@@ -107,6 +116,14 @@ export default function SettingsPage({ onOpenRunLog }: Props) {
             <div className="owner-settings-row"><span>Email</span><strong>{ownerEmail || 'Unavailable'}</strong></div>
             <div className="owner-settings-row"><span>Role</span><strong>{ownerRole || 'Authenticated user'}</strong></div>
             <div className="owner-settings-row"><span>Access model</span><strong>Single owner</strong></div>
+          </article>
+
+          <article className="panel settings-section-card compact-card">
+            <span className="mini-label">DATA RETENTION</span>
+            <h2>Archived leads</h2>
+            <p className="settings-muted">{archivedLeadCount ?? '—'} records currently archived</p>
+            <p className="settings-note">Archived records stay out of active metrics and automations while keeping their database and routing history intact.</p>
+            <button className="button secondary settings-full-button" type="button" onClick={() => setShowArchive(true)}>Manage archive →</button>
           </article>
 
           <article className="panel settings-section-card compact-card">
