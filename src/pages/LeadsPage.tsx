@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Database } from '../types/database'
 
@@ -43,44 +43,46 @@ function categoryClass(category: string | null) {
 export default function LeadsPage({ onLoaded, onAddLead }: Props) {
   const [leads, setLeads] = useState<Lead[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState<'all' | 'hot' | 'warm' | 'cold'>('all')
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+
+  const loadLeads = useCallback(async (background = false) => {
+    if (!supabase) {
+      setError('Supabase is not configured for this environment.')
+      setLoading(false)
+      setRefreshing(false)
+      return
+    }
+
+    if (background) setRefreshing(true)
+    else setLoading(true)
+
+    setError(null)
+
+    const { data, error: loadError } = await supabase
+      .from('leads')
+      .select('*')
+      .order('created_at', { ascending: false })
+
+    if (loadError) {
+      setError(loadError.message)
+    } else {
+      const rows = data || []
+      setLeads(rows)
+      setLastUpdated(new Date())
+      onLoaded?.(rows)
+    }
+
+    setLoading(false)
+    setRefreshing(false)
+  }, [onLoaded])
 
   useEffect(() => {
-    let active = true
-
-    async function loadLeads() {
-      if (!supabase) {
-        setError('Supabase is not configured for this environment.')
-        setLoading(false)
-        return
-      }
-
-      setLoading(true)
-      setError(null)
-      const { data, error: loadError } = await supabase
-        .from('leads')
-        .select('*')
-        .order('created_at', { ascending: false })
-
-      if (!active) return
-
-      if (loadError) {
-        setError(loadError.message)
-      } else {
-        const rows = data || []
-        setLeads(rows)
-        onLoaded?.(rows)
-      }
-      setLoading(false)
-    }
-
-    loadLeads()
-    return () => {
-      active = false
-    }
-  }, [onLoaded])
+    void loadLeads()
+  }, [loadLeads])
 
   const filtered = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase()
@@ -141,10 +143,28 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
               aria-label="Search leads"
             />
           </div>
-          <span className="results-count">{filtered.length} result{filtered.length === 1 ? '' : 's'}</span>
+
+          <div className="leads-toolbar-actions">
+            <button
+              className={`leads-refresh-button ${refreshing ? 'refreshing' : ''}`}
+              type="button"
+              onClick={() => void loadLeads(true)}
+              disabled={refreshing || loading}
+              aria-label="Refresh leads"
+              title="Refresh leads only"
+            >
+              <span aria-hidden="true">↻</span>
+            </button>
+            <div className="results-meta">
+              <span className="results-count">{filtered.length} result{filtered.length === 1 ? '' : 's'}</span>
+              {lastUpdated && (
+                <small aria-live="polite">Updated {lastUpdated.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</small>
+              )}
+            </div>
+          </div>
         </div>
 
-        <div className="table-wrap leads-table-wrap">
+        <div className={`table-wrap leads-table-wrap ${refreshing ? 'is-refreshing' : ''}`}>
           <table>
             <thead>
               <tr>
