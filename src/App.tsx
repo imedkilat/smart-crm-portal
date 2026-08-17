@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from './lib/supabase'
 import type { Database } from './types/database'
+import LeadProfileDrawer from './components/LeadProfileDrawer'
 import LeadsPage from './pages/LeadsPage'
 import AddLeadPage from './pages/AddLeadPage'
 import ReportsPage from './pages/ReportsPage'
@@ -30,7 +31,7 @@ const workflow = [
   ['01', 'Lead intake', 'Forms, Excel uploads and manual capture'],
   ['02', 'AI classification', 'Intent, Hot / Warm / Cold and summary'],
   ['03', 'Storage', 'Structured records synced to Supabase'],
-  ['04', 'Follow-up', 'Automated outreach based on lead quality'],
+  ['04', 'Follow-up', 'Automated outreach based on routing priority'],
   ['05', 'Intelligence', 'Weekly trends, insights and reports'],
 ]
 
@@ -58,6 +59,10 @@ function initials(name: string | null) {
     .join('')
 }
 
+function statusValue(lead: Lead) {
+  return lead.routing_status || lead.category || 'Unclassified'
+}
+
 function categoryClass(category: string | null) {
   const value = (category || '').toLowerCase()
   if (value === 'hot') return 'hot'
@@ -75,6 +80,7 @@ export default function App() {
   const [weeklySummary, setWeeklySummary] = useState<WeeklySummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [selectedDashboardLead, setSelectedDashboardLead] = useState<Lead | null>(null)
 
   useEffect(() => {
     let active = true
@@ -119,11 +125,16 @@ export default function App() {
     setLeads(rows)
   }, [])
 
+  const handleDashboardLeadUpdated = useCallback((updatedLead: Lead) => {
+    setLeads((current) => current.map((lead) => lead.id === updatedLead.id ? updatedLead : lead))
+    setSelectedDashboardLead(updatedLead)
+  }, [])
+
   const metrics = useMemo(() => {
     const total = leads.length
-    const hot = leads.filter((lead) => lead.category?.toLowerCase() === 'hot').length
-    const warm = leads.filter((lead) => lead.category?.toLowerCase() === 'warm').length
-    const cold = leads.filter((lead) => lead.category?.toLowerCase() === 'cold').length
+    const hot = leads.filter((lead) => statusValue(lead).toLowerCase() === 'hot').length
+    const warm = leads.filter((lead) => statusValue(lead).toLowerCase() === 'warm').length
+    const cold = leads.filter((lead) => statusValue(lead).toLowerCase() === 'cold').length
     const pipeline = leads.reduce((sum, lead) => sum + parseBudget(lead.budget), 0)
 
     return { total, hot, warm, cold, pipeline }
@@ -198,6 +209,7 @@ export default function App() {
               weeklySummary={weeklySummary}
               recentLeads={recentLeads}
               setPage={setPage}
+              onOpenLead={setSelectedDashboardLead}
             />
           )}
 
@@ -225,6 +237,14 @@ export default function App() {
           )}
         </main>
       </div>
+
+      {selectedDashboardLead && (
+        <LeadProfileDrawer
+          lead={selectedDashboardLead}
+          onClose={() => setSelectedDashboardLead(null)}
+          onUpdated={handleDashboardLeadUpdated}
+        />
+      )}
     </div>
   )
 }
@@ -237,6 +257,7 @@ function DashboardPage({
   weeklySummary,
   recentLeads,
   setPage,
+  onOpenLead,
 }: {
   loading: boolean
   error: string | null
@@ -245,6 +266,7 @@ function DashboardPage({
   weeklySummary: WeeklySummary | null
   recentLeads: Lead[]
   setPage: (page: Page) => void
+  onOpenLead: (lead: Lead) => void
 }) {
   return (
     <>
@@ -268,9 +290,9 @@ function DashboardPage({
 
       <section className="kpi-grid" aria-label="Lead metrics">
         <MetricCard label="Total leads" value={loading ? '—' : String(metrics.total)} tone="blue" note="Stored in Supabase" />
-        <MetricCard label="Hot" value={loading ? '—' : String(metrics.hot)} tone="red" note="High intent" />
-        <MetricCard label="Warm" value={loading ? '—' : String(metrics.warm)} tone="amber" note="Needs nurture" />
-        <MetricCard label="Cold" value={loading ? '—' : String(metrics.cold)} tone="cyan" note="Low intent" />
+        <MetricCard label="Hot" value={loading ? '—' : String(metrics.hot)} tone="red" note="Hot routing priority" />
+        <MetricCard label="Warm" value={loading ? '—' : String(metrics.warm)} tone="amber" note="Warm routing priority" />
+        <MetricCard label="Cold" value={loading ? '—' : String(metrics.cold)} tone="cyan" note="Cold routing priority" />
         <MetricCard label="Pipeline value" value={loading ? '—' : money(metrics.pipeline)} tone="violet" note="From lead budgets" wide />
       </section>
 
@@ -323,7 +345,7 @@ function DashboardPage({
         <article className="panel distribution-panel">
           <div className="section-heading compact">
             <div>
-              <span className="mini-label">LEAD QUALITY</span>
+              <span className="mini-label">ROUTING PRIORITY</span>
               <h2>Pipeline mix</h2>
             </div>
             <strong className="panel-total">{metrics.total}</strong>
@@ -350,7 +372,7 @@ function DashboardPage({
           <div>
             <span className="mini-label">LIVE FROM SUPABASE</span>
             <h2>Recent leads</h2>
-            <p>Latest captured records, sorted by arrival.</p>
+            <p>Click any lead to open its profile, edit operational details or change routing status.</p>
           </div>
           <button className="button tertiary" type="button" onClick={() => setPage('leads')}>View all</button>
         </div>
@@ -361,28 +383,43 @@ function DashboardPage({
               <tr>
                 <th>Lead</th>
                 <th>Intent</th>
-                <th>Status</th>
+                <th>Routing status</th>
                 <th>Budget</th>
                 <th>Source</th>
                 <th>Added</th>
               </tr>
             </thead>
             <tbody>
-              {recentLeads.map((lead) => (
-                <tr key={lead.id}>
-                  <td>
-                    <div className="lead-cell">
-                      <span className="avatar">{initials(lead.name)}</span>
-                      <div><strong>{lead.name || 'Unnamed lead'}</strong><span>{lead.email || 'No email'}</span></div>
-                    </div>
-                  </td>
-                  <td>{lead.intent || '—'}</td>
-                  <td><span className={`category-pill ${categoryClass(lead.category)}`}><i />{lead.category || 'Unclassified'}</span></td>
-                  <td>{lead.budget ? money(parseBudget(lead.budget)) : '—'}</td>
-                  <td>{lead.source || '—'}</td>
-                  <td>{new Date(lead.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</td>
-                </tr>
-              ))}
+              {recentLeads.map((lead) => {
+                const routing = statusValue(lead)
+                return (
+                  <tr
+                    key={lead.id}
+                    className="lead-table-row"
+                    tabIndex={0}
+                    onClick={() => onOpenLead(lead)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault()
+                        onOpenLead(lead)
+                      }
+                    }}
+                    aria-label={`Open ${lead.name || 'lead'} profile`}
+                  >
+                    <td>
+                      <div className="lead-cell">
+                        <span className="avatar">{initials(lead.name)}</span>
+                        <div><strong>{lead.name || 'Unnamed lead'}</strong><span>{lead.email || 'No email'}</span></div>
+                      </div>
+                    </td>
+                    <td>{lead.intent || '—'}</td>
+                    <td><span className={`category-pill ${categoryClass(routing)}`}><i />{routing}</span></td>
+                    <td>{lead.budget ? money(parseBudget(lead.budget)) : '—'}</td>
+                    <td>{lead.source || '—'}</td>
+                    <td>{new Date(lead.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</td>
+                  </tr>
+                )
+              })}
               {!loading && recentLeads.length === 0 && (
                 <tr><td className="empty-cell" colSpan={6}>No leads yet.</td></tr>
               )}
@@ -448,7 +485,7 @@ function AnalyticsPage({
 
   const budgetStats = useMemo(() => {
     return ['hot', 'warm', 'cold'].map((category) => {
-      const categoryLeads = leads.filter((lead) => lead.category?.toLowerCase() === category)
+      const categoryLeads = leads.filter((lead) => statusValue(lead).toLowerCase() === category)
       const values = categoryLeads.map((lead) => parseBudget(lead.budget)).filter((value) => value > 0)
       const total = values.reduce((sum, value) => sum + value, 0)
       return {
@@ -475,13 +512,13 @@ function AnalyticsPage({
         <div>
           <div className="eyebrow">LIVE PIPELINE INTELLIGENCE</div>
           <h1>Analytics</h1>
-          <p>Lead quality, acquisition, intent and budget signals from your Supabase data.</p>
+          <p>Lead routing, acquisition, intent and budget signals from your Supabase data.</p>
         </div>
         <span className="analytics-live"><i /> Live data</span>
       </section>
 
       <section className="analytics-kpis">
-        <AnalyticsMetric label="Hot lead share" value={loading ? '—' : `${hotShare}%`} note={`${metrics.hot} of ${metrics.total} leads`} accent="red" />
+        <AnalyticsMetric label="Hot routing share" value={loading ? '—' : `${hotShare}%`} note={`${metrics.hot} of ${metrics.total} leads`} accent="red" />
         <AnalyticsMetric label="Average lead budget" value={loading ? '—' : money(avgBudget)} note="Across stored records" accent="violet" />
         <AnalyticsMetric label="Top source" value={loading ? '—' : dominantSource?.label || '—'} note={dominantSource ? `${dominantSource.count} leads captured` : 'No source data'} accent="blue" />
         <AnalyticsMetric label="Primary intent" value={loading ? '—' : dominantIntent?.label || '—'} note={dominantIntent ? `${percent(dominantIntent.count, metrics.total)}% of pipeline` : 'No intent data'} accent="amber" />
@@ -489,7 +526,7 @@ function AnalyticsPage({
 
       <section className="analytics-grid analytics-grid-top">
         <article className="panel analytics-panel quality-panel">
-          <AnalyticsPanelHeader kicker="LEAD QUALITY" title="Pipeline distribution" detail={`${metrics.total} total leads`} />
+          <AnalyticsPanelHeader kicker="ROUTING PRIORITY" title="Pipeline distribution" detail={`${metrics.total} total leads`} />
           <div className="quality-layout">
             <div
               className="quality-donut"
@@ -561,7 +598,7 @@ function AnalyticsPage({
 
       <section className="analytics-grid analytics-grid-bottom">
         <article className="panel analytics-panel budget-panel">
-          <AnalyticsPanelHeader kicker="PIPELINE VALUE" title="Budget by lead quality" detail={money(metrics.pipeline)} />
+          <AnalyticsPanelHeader kicker="PIPELINE VALUE" title="Budget by routing status" detail={money(metrics.pipeline)} />
           <div className="budget-bars">
             {budgetStats.map((item) => (
               <div className="budget-row" key={item.label}>
