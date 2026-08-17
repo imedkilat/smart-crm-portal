@@ -69,6 +69,12 @@ export default function AddLeadPage({ onCreated }: Props) {
       return
     }
 
+    if (!file.name.toLowerCase().endsWith('.xlsx')) {
+      setUploadState('error')
+      setUploadFeedback('Use an .xlsx workbook for this intake workflow.')
+      return
+    }
+
     setUploadState('submitting')
     setUploadFeedback('Uploading and classifying spreadsheet leads…')
 
@@ -179,12 +185,12 @@ export default function AddLeadPage({ onCreated }: Props) {
           <article className="panel excel-upload-card">
             <span className="mini-label">BULK INTAKE</span>
             <h2>Upload Excel leads</h2>
-            <p>Send an .xlsx file through the same workflow for row-by-row AI classification.</p>
+            <p>Send an .xlsx workbook through the same workflow for row-by-row AI classification.</p>
             <label className="file-drop">
-              <input ref={fileRef} type="file" accept=".xlsx,.xls" />
+              <input ref={fileRef} type="file" accept=".xlsx" />
               <span className="file-icon">⇧</span>
               <strong>Choose spreadsheet</strong>
-              <small>.xlsx or .xls</small>
+              <small>.xlsx workbook</small>
             </label>
             <button className="button secondary upload-button" type="button" onClick={uploadExcel} disabled={uploadState === 'submitting'}>
               {uploadState === 'submitting' ? 'Uploading…' : 'Upload to workflow'}
