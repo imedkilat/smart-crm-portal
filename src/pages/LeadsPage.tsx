@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Database } from '../types/database'
+import '../lead-drawer.css'
 
 type Lead = Database['public']['Tables']['leads']['Row']
 
@@ -48,6 +49,7 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState<'all' | 'hot' | 'warm' | 'cold'>('all')
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+  const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
 
   const loadLeads = useCallback(async (background = false) => {
     if (!supabase) {
@@ -74,6 +76,11 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
       setLeads(rows)
       setLastUpdated(new Date())
       onLoaded?.(rows)
+
+      setSelectedLead((current) => {
+        if (!current) return null
+        return rows.find((lead) => lead.id === current.id) || null
+      })
     }
 
     setLoading(false)
@@ -83,6 +90,17 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
   useEffect(() => {
     void loadLeads()
   }, [loadLeads])
+
+  useEffect(() => {
+    if (!selectedLead) return
+
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') setSelectedLead(null)
+    }
+
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [selectedLead])
 
   const filtered = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase()
@@ -179,7 +197,19 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
             </thead>
             <tbody>
               {filtered.map((lead) => (
-                <tr key={lead.id}>
+                <tr
+                  key={lead.id}
+                  className="lead-table-row"
+                  tabIndex={0}
+                  onClick={() => setSelectedLead(lead)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      setSelectedLead(lead)
+                    }
+                  }}
+                  aria-label={`Open ${lead.name || 'lead'} details`}
+                >
                   <td>
                     <div className="lead-cell">
                       <span className="avatar">{initials(lead.name)}</span>
@@ -213,6 +243,75 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
           </table>
         </div>
       </section>
+
+      {selectedLead && (
+        <div className="lead-drawer-layer" role="presentation" onMouseDown={() => setSelectedLead(null)}>
+          <aside
+            className="lead-drawer"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`${selectedLead.name || 'Lead'} details`}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="lead-drawer-header">
+              <div className="lead-drawer-identity">
+                <span className="lead-drawer-avatar">{initials(selectedLead.name)}</span>
+                <div>
+                  <span className="mini-label">LEAD PROFILE</span>
+                  <h2>{selectedLead.name || 'Unnamed lead'}</h2>
+                  <p>{selectedLead.email || 'No email address'}</p>
+                </div>
+              </div>
+              <button className="lead-drawer-close" type="button" onClick={() => setSelectedLead(null)} aria-label="Close lead details">×</button>
+            </div>
+
+            <div className="lead-drawer-badges">
+              <span className={`category-pill ${categoryClass(selectedLead.category)}`}><i />{selectedLead.category || 'Unclassified'}</span>
+              <span className="lead-intent-pill">{selectedLead.intent || 'No intent'}</span>
+              <span className="lead-source-pill">{selectedLead.source || 'Unknown source'}</span>
+            </div>
+
+            <div className="lead-drawer-actions">
+              {selectedLead.email ? (
+                <a className="button primary" href={`mailto:${selectedLead.email}`}>Email lead</a>
+              ) : (
+                <button className="button primary" type="button" disabled>Email lead</button>
+              )}
+              <button className="button secondary" type="button" onClick={() => void loadLeads(true)}>↻ Refresh record</button>
+            </div>
+
+            <div className="lead-detail-grid">
+              <LeadDetail label="Budget" value={selectedLead.budget ? money(parseBudget(selectedLead.budget)) : 'Not provided'} />
+              <LeadDetail label="Lead ID" value={`#${selectedLead.id}`} />
+              <LeadDetail label="Added" value={new Date(selectedLead.created_at).toLocaleString('en-US', { month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })} />
+              <LeadDetail label="Source" value={selectedLead.source || 'Unknown'} />
+            </div>
+
+            <section className="lead-drawer-section ai-section">
+              <div className="lead-section-heading">
+                <span className="spark-badge">✦</span>
+                <div><span className="mini-label">AI CLASSIFICATION</span><h3>Lead summary</h3></div>
+              </div>
+              <p>{selectedLead.summary || 'No AI summary is available for this lead.'}</p>
+            </section>
+
+            <section className="lead-drawer-section">
+              <span className="mini-label">ORIGINAL INQUIRY</span>
+              <h3>Message</h3>
+              <p className="lead-message">{selectedLead.message || 'No original message was saved.'}</p>
+            </section>
+          </aside>
+        </div>
+      )}
     </>
+  )
+}
+
+function LeadDetail({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="lead-detail-item">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
   )
 }
