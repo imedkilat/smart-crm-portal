@@ -5,6 +5,10 @@ import LeadProfileDrawer from './LeadProfileDrawer'
 
 type Lead = Database['public']['Tables']['leads']['Row']
 
+type Props = {
+  onLeadUpdated?: (lead: Lead) => void
+}
+
 function initials(name: string | null) {
   if (!name) return '—'
   return name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('')
@@ -46,7 +50,7 @@ function searchScore(lead: Lead, query: string) {
   return 0
 }
 
-export default function GlobalSearch() {
+export default function GlobalSearch({ onLeadUpdated }: Props) {
   const [leads, setLeads] = useState<Lead[]>([])
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
@@ -60,15 +64,13 @@ export default function GlobalSearch() {
     if (!supabase) return
     setLoading(true)
 
-    let request = supabase
+    const { data, error } = await supabase
       .from('leads')
       .select('*')
       .order('created_at', { ascending: false })
 
-    const { data, error } = await request
-
     if (!error) {
-      const activeLeads = ((data || []) as Lead[]).filter((lead) => !('archived_at' in lead) || !lead.archived_at)
+      const activeLeads = ((data || []) as Lead[]).filter((lead) => !lead.archived_at)
       setLeads(activeLeads)
     }
     setLoading(false)
@@ -149,6 +151,7 @@ export default function GlobalSearch() {
   function handleLeadUpdated(updatedLead: Lead) {
     setLeads((current) => current.map((lead) => lead.id === updatedLead.id ? updatedLead : lead))
     setSelectedLead(updatedLead)
+    onLeadUpdated?.(updatedLead)
   }
 
   return (
