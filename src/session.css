@@ -1,0 +1,53 @@
+.session-signout {
+  position: fixed;
+  top: 16px;
+  right: 24px;
+  z-index: 40;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid #e4e8f0;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .94);
+  color: #5a6478;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, .04);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: .18s ease;
+}
+
+.session-signout:hover:not(:disabled) {
+  border-color: #d4d9e4;
+  background: #fafbfc;
+  color: #263349;
+}
+
+.session-signout:disabled {
+  cursor: wait;
+  opacity: .6;
+}
+
+@media (min-width: 861px) {
+  .topbar {
+    padding-right: 112px;
+  }
+}
+
+@media (max-width: 860px) {
+  .session-signout {
+    top: 14px;
+    right: 18px;
+  }
+
+  .topbar {
+    padding-right: 102px;
+  }
+}
+
+@media (max-width: 560px) {
+  .session-signout {
+    min-height: 32px;
+    padding: 0 10px;
+    font-size: 11.5px;
+  }
+}
