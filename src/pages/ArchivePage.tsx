@@ -7,6 +7,7 @@ type Lead = Database['public']['Tables']['leads']['Row']
 
 type Props = {
   onRestored?: (lead: Lead) => void
+  onBack?: () => void
 }
 
 function initials(name: string | null) {
@@ -26,7 +27,7 @@ function statusClass(value: string | null) {
   return 'neutral'
 }
 
-export default function ArchivePage({ onRestored }: Props) {
+export default function ArchivePage({ onRestored, onBack }: Props) {
   const [leads, setLeads] = useState<Lead[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -119,9 +120,12 @@ export default function ArchivePage({ onRestored }: Props) {
           <h1>Archive</h1>
           <p>Review and restore leads removed from active CRM views without deleting their history.</p>
         </div>
-        <button className="button secondary" type="button" onClick={() => void loadArchived(true)} disabled={refreshing || loading}>
-          {refreshing ? 'Refreshing…' : '↻ Refresh archive'}
-        </button>
+        <div className="heading-actions">
+          {onBack && <button className="button secondary" type="button" onClick={onBack}>← Settings</button>}
+          <button className="button secondary" type="button" onClick={() => void loadArchived(true)} disabled={refreshing || loading}>
+            {refreshing ? 'Refreshing…' : '↻ Refresh archive'}
+          </button>
+        </div>
       </section>
 
       {error && <div className="error-banner">{error}</div>}
