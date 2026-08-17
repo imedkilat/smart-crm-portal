@@ -1,0 +1,118 @@
+.leads-sort-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 0 9px 0 10px;
+  border: 1px solid #e1e6ef;
+  border-radius: 10px;
+  background: #fff;
+  color: #7b8498;
+}
+
+.leads-sort-control > span {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.leads-sort-control select {
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #475467;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.lead-name-line {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.new-lead-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 0 7px;
+  border: 1px solid #93c5fd;
+  border-radius: 999px;
+  background: #2563eb;
+  color: #fff;
+  box-shadow: 0 5px 14px -8px rgba(37, 99, 235, .9);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .07em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.leads-table-wrap tbody tr.is-new-lead {
+  position: relative;
+  background: linear-gradient(90deg, rgba(37, 99, 235, .075), rgba(37, 99, 235, .02) 42%, transparent 75%);
+}
+
+.leads-table-wrap tbody tr.is-new-lead::after {
+  content: '';
+  position: absolute;
+  inset: 7px auto 7px 0;
+  width: 3px;
+  border-radius: 0 999px 999px 0;
+  background: #2563eb;
+}
+
+.leads-table-wrap tbody tr.is-new-lead:hover {
+  background: linear-gradient(90deg, rgba(37, 99, 235, .11), rgba(37, 99, 235, .035) 48%, rgba(255,255,255,.7));
+}
+
+.lead-added-cell {
+  display: grid;
+  gap: 3px;
+}
+
+.lead-added-cell > span {
+  white-space: nowrap;
+}
+
+.lead-added-cell small {
+  color: #2563eb;
+  font-size: 9px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+@media (max-width: 980px) {
+  .leads-toolbar {
+    flex-wrap: wrap;
+  }
+
+  .leads-search {
+    flex: 1 1 100%;
+  }
+
+  .leads-toolbar-actions {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 620px) {
+  .leads-toolbar-actions {
+    flex-wrap: wrap;
+    justify-content: stretch;
+  }
+
+  .leads-sort-control {
+    flex: 1 1 auto;
+    justify-content: space-between;
+  }
+
+  .results-meta {
+    margin-left: auto;
+  }
+}
