@@ -12,7 +12,7 @@ type Props = {
   onAddLead?: () => void
 }
 
-const NEW_LEAD_WINDOW_MS = 24 * 60 * 60 * 1000
+const NEW_LEAD_WINDOW_MS = 30 * 60 * 1000
 
 function initials(name: string | null) {
   if (!name) return '—'
@@ -50,6 +50,13 @@ function isNewLead(lead: Lead) {
   if (!createdAt) return false
   const age = Date.now() - createdAt
   return age >= 0 && age <= NEW_LEAD_WINDOW_MS
+}
+
+function freshnessLabel(lead: Lead) {
+  const age = Math.max(0, Date.now() - leadCreatedAt(lead))
+  const minutes = Math.floor(age / 60000)
+  if (minutes <= 1) return 'Just added'
+  return `${minutes}m ago`
 }
 
 export default function LeadsPage({ onLoaded, onAddLead }: Props) {
@@ -205,13 +212,13 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
                 const newLead = isNewLead(lead)
                 return (
                   <tr key={lead.id} className={`lead-table-row ${newLead ? 'is-new-lead' : ''}`} tabIndex={0} onClick={() => setSelectedLead(lead)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedLead(lead) } }} aria-label={`Open ${lead.name || 'lead'} details`}>
-                    <td><div className="lead-cell"><span className="avatar">{initials(lead.name)}</span><div><div className="lead-name-line"><strong>{lead.name || 'Unnamed lead'}</strong>{newLead && <span className="new-lead-badge">New</span>}</div><span>{lead.email || 'No email'}</span></div></div></td>
+                    <td><div className="lead-cell"><span className="avatar">{initials(lead.name)}</span><div><div className="lead-name-line"><strong>{lead.name || 'Unnamed lead'}</strong>{newLead && <span className="new-lead-badge"><i />New</span>}</div><span>{lead.email || 'No email'}</span></div></div></td>
                     <td>{lead.intent || '—'}</td>
                     <td><span className={`category-pill ${categoryClass(routing)}`}><i />{routing}</span></td>
                     <td>{lead.budget ? money(parseBudget(lead.budget)) : '—'}</td>
                     <td>{lead.source || '—'}</td>
                     <td className="summary-cell" title={lead.summary || lead.message || ''}>{lead.summary || lead.message || '—'}</td>
-                    <td><div className="lead-added-cell"><span>{new Date(lead.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>{newLead && <small>Added recently</small>}</div></td>
+                    <td><div className="lead-added-cell"><span>{new Date(lead.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>{newLead && <small>{freshnessLabel(lead)}</small>}</div></td>
                     <td className="lead-row-actions"><button type="button" className="lead-archive-row-button" disabled={archivingId === lead.id} onClick={(event) => { event.stopPropagation(); void archiveLead(lead) }}>{archivingId === lead.id ? '…' : 'Archive'}</button></td>
                   </tr>
                 )
