@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import type { Database } from '../types/database'
 import ArchivePage from './ArchivePage'
 
 const LEAD_WEBHOOK = import.meta.env.VITE_N8N_LEAD_WEBHOOK_URL || 'https://tolakautomations.app.n8n.cloud/webhook/799b1d66-0a5f-44b0-8f43-600ea4775979'
 const STATUS_WEBHOOK = import.meta.env.VITE_N8N_STATUS_WEBHOOK_URL || 'https://tolakautomations.app.n8n.cloud/webhook/smart-crm-status-route'
 
+type Lead = Database['public']['Tables']['leads']['Row']
+
 type Props = {
   onOpenRunLog: () => void
+  onLeadRestored?: (lead: Lead) => void
 }
 
 function endpointLabel(url: string) {
@@ -18,7 +22,7 @@ function endpointLabel(url: string) {
   }
 }
 
-export default function SettingsPage({ onOpenRunLog }: Props) {
+export default function SettingsPage({ onOpenRunLog, onLeadRestored }: Props) {
   const [checking, setChecking] = useState(true)
   const [databaseHealthy, setDatabaseHealthy] = useState(false)
   const [activeLeadCount, setActiveLeadCount] = useState<number | null>(null)
@@ -57,7 +61,18 @@ export default function SettingsPage({ onOpenRunLog }: Props) {
   useEffect(() => { void checkHealth() }, [checkHealth])
 
   if (showArchive) {
-    return <ArchivePage onBack={() => { setShowArchive(false); void checkHealth() }} />
+    return (
+      <ArchivePage
+        onRestored={(lead) => {
+          onLeadRestored?.(lead)
+          void checkHealth()
+        }}
+        onBack={() => {
+          setShowArchive(false)
+          void checkHealth()
+        }}
+      />
+    )
   }
 
   return (
