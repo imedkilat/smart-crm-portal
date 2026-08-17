@@ -91,6 +91,29 @@ export type Database = {
           warm_leads: number | null
           cold_leads: number | null
           ai_summary: string | null
+          report_version: number
+          period_start: string | null
+          period_end: string | null
+          previous_period_start: string | null
+          previous_period_end: string | null
+          new_leads: number | null
+          new_hot_leads: number | null
+          new_warm_leads: number | null
+          new_cold_leads: number | null
+          previous_new_leads: number | null
+          previous_hot_leads: number | null
+          previous_warm_leads: number | null
+          previous_cold_leads: number | null
+          new_leads_change: number | null
+          hot_change: number | null
+          warm_change: number | null
+          cold_change: number | null
+          hot_percent: number | null
+          warm_percent: number | null
+          cold_percent: number | null
+          summary_model: string | null
+          generation_source: string
+          data_timezone: string
         }
         Insert: Partial<Database['public']['Tables']['weekly_summary']['Row']> & { period: string; id?: string; created_at?: string }
         Update: Partial<Database['public']['Tables']['weekly_summary']['Row']>
