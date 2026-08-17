@@ -13,6 +13,8 @@ export type Database = {
           intent: string | null
           summary: string | null
           source: string | null
+          routing_status: string | null
+          status_changed_at: string | null
         }
         Insert: {
           id?: number
@@ -25,6 +27,8 @@ export type Database = {
           intent?: string | null
           summary?: string | null
           source?: string | null
+          routing_status?: string | null
+          status_changed_at?: string | null
         }
         Update: Partial<Database['public']['Tables']['leads']['Insert']>
         Relationships: []
