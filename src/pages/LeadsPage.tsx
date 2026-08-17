@@ -2,13 +2,17 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Database } from '../types/database'
 import LeadProfileDrawer from '../components/LeadProfileDrawer'
+import '../leads-new.css'
 
 type Lead = Database['public']['Tables']['leads']['Row']
+type SortOrder = 'newest' | 'oldest'
 
 type Props = {
   onLoaded?: (leads: Lead[]) => void
   onAddLead?: () => void
 }
+
+const NEW_LEAD_WINDOW_MS = 24 * 60 * 60 * 1000
 
 function initials(name: string | null) {
   if (!name) return '—'
@@ -36,6 +40,18 @@ function categoryClass(value: string | null) {
   return 'cold'
 }
 
+function leadCreatedAt(lead: Lead) {
+  const timestamp = new Date(lead.created_at).getTime()
+  return Number.isFinite(timestamp) ? timestamp : 0
+}
+
+function isNewLead(lead: Lead) {
+  const createdAt = leadCreatedAt(lead)
+  if (!createdAt) return false
+  const age = Date.now() - createdAt
+  return age >= 0 && age <= NEW_LEAD_WINDOW_MS
+}
+
 export default function LeadsPage({ onLoaded, onAddLead }: Props) {
   const [leads, setLeads] = useState<Lead[]>([])
   const [loading, setLoading] = useState(true)
@@ -44,6 +60,7 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState<'all' | 'hot' | 'warm' | 'cold'>('all')
+  const [sortOrder, setSortOrder] = useState<SortOrder>('newest')
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
 
@@ -83,15 +100,21 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
 
   const filtered = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase()
-    return leads.filter((lead) => {
-      const routing = statusValue(lead).toLowerCase()
-      if (category !== 'all' && routing !== category) return false
-      if (!normalizedQuery) return true
-      return [lead.name, lead.email, lead.intent, lead.category, lead.routing_status, lead.source, lead.summary, lead.message]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(normalizedQuery))
-    })
-  }, [leads, query, category])
+    return leads
+      .filter((lead) => {
+        const routing = statusValue(lead).toLowerCase()
+        if (category !== 'all' && routing !== category) return false
+        if (!normalizedQuery) return true
+        return [lead.name, lead.email, lead.intent, lead.category, lead.routing_status, lead.source, lead.summary, lead.message]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(normalizedQuery))
+      })
+      .sort((a, b) => {
+        const difference = leadCreatedAt(b) - leadCreatedAt(a)
+        if (difference !== 0) return sortOrder === 'newest' ? difference : -difference
+        return sortOrder === 'newest' ? b.id - a.id : a.id - b.id
+      })
+  }, [leads, query, category, sortOrder])
 
   const counts = useMemo(() => ({
     all: leads.length,
@@ -161,6 +184,13 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name, email, intent, source or AI summary..." aria-label="Search leads" />
           </div>
           <div className="leads-toolbar-actions">
+            <label className="leads-sort-control">
+              <span>Sort</span>
+              <select value={sortOrder} onChange={(event) => setSortOrder(event.target.value as SortOrder)} aria-label="Sort leads by date">
+                <option value="newest">Newest → Oldest</option>
+                <option value="oldest">Oldest → Newest</option>
+              </select>
+            </label>
             <button className={`leads-refresh-button ${refreshing ? 'refreshing' : ''}`} type="button" onClick={() => void loadLeads(true)} disabled={refreshing || loading} aria-label="Refresh leads" title="Refresh leads only"><span aria-hidden="true">↻</span></button>
             <div className="results-meta"><span className="results-count">{filtered.length} result{filtered.length === 1 ? '' : 's'}</span>{lastUpdated && <small aria-live="polite">Updated {lastUpdated.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</small>}</div>
           </div>
@@ -172,15 +202,16 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
             <tbody>
               {filtered.map((lead) => {
                 const routing = statusValue(lead)
+                const newLead = isNewLead(lead)
                 return (
-                  <tr key={lead.id} className="lead-table-row" tabIndex={0} onClick={() => setSelectedLead(lead)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedLead(lead) } }} aria-label={`Open ${lead.name || 'lead'} details`}>
-                    <td><div className="lead-cell"><span className="avatar">{initials(lead.name)}</span><div><strong>{lead.name || 'Unnamed lead'}</strong><span>{lead.email || 'No email'}</span></div></div></td>
+                  <tr key={lead.id} className={`lead-table-row ${newLead ? 'is-new-lead' : ''}`} tabIndex={0} onClick={() => setSelectedLead(lead)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedLead(lead) } }} aria-label={`Open ${lead.name || 'lead'} details`}>
+                    <td><div className="lead-cell"><span className="avatar">{initials(lead.name)}</span><div><div className="lead-name-line"><strong>{lead.name || 'Unnamed lead'}</strong>{newLead && <span className="new-lead-badge">New</span>}</div><span>{lead.email || 'No email'}</span></div></div></td>
                     <td>{lead.intent || '—'}</td>
                     <td><span className={`category-pill ${categoryClass(routing)}`}><i />{routing}</span></td>
                     <td>{lead.budget ? money(parseBudget(lead.budget)) : '—'}</td>
                     <td>{lead.source || '—'}</td>
                     <td className="summary-cell" title={lead.summary || lead.message || ''}>{lead.summary || lead.message || '—'}</td>
-                    <td>{new Date(lead.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</td>
+                    <td><div className="lead-added-cell"><span>{new Date(lead.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>{newLead && <small>Added recently</small>}</div></td>
                     <td className="lead-row-actions"><button type="button" className="lead-archive-row-button" disabled={archivingId === lead.id} onClick={(event) => { event.stopPropagation(); void archiveLead(lead) }}>{archivingId === lead.id ? '…' : 'Archive'}</button></td>
                   </tr>
                 )
