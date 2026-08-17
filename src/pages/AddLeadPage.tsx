@@ -2,7 +2,7 @@ import { FormEvent, useRef, useState } from 'react'
 
 const LEAD_WEBHOOK_URL =
   import.meta.env.VITE_N8N_LEAD_WEBHOOK_URL ||
-  'https://tolakautomations.app.n8n.cloud/webhook-test/799b1d66-0a5f-44b0-8f43-600ea4775979'
+  'https://tolakautomations.app.n8n.cloud/webhook/799b1d66-0a5f-44b0-8f43-600ea4775979'
 
 type Props = {
   onCreated?: () => void
