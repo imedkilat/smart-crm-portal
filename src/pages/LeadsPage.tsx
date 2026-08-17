@@ -1,7 +1,7 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Database } from '../types/database'
-import '../lead-drawer.css'
+import LeadProfileDrawer from '../components/LeadProfileDrawer'
 
 type Lead = Database['public']['Tables']['leads']['Row']
 
@@ -9,17 +9,6 @@ type Props = {
   onLoaded?: (leads: Lead[]) => void
   onAddLead?: () => void
 }
-
-type EditForm = {
-  name: string
-  email: string
-  budget: string
-  routing_status: string
-}
-
-const STATUS_WEBHOOK_URL =
-  import.meta.env.VITE_N8N_STATUS_WEBHOOK_URL ||
-  'https://tolakautomations.app.n8n.cloud/webhook-test/smart-crm-status-route'
 
 function initials(name: string | null) {
   if (!name) return '—'
@@ -49,20 +38,11 @@ function statusValue(lead: Lead) {
   return lead.routing_status || lead.category || 'Unclassified'
 }
 
-function categoryClass(category: string | null) {
-  const value = (category || '').toLowerCase()
-  if (value === 'hot') return 'hot'
-  if (value === 'warm') return 'warm'
+function categoryClass(value: string | null) {
+  const normalized = (value || '').toLowerCase()
+  if (normalized === 'hot') return 'hot'
+  if (normalized === 'warm') return 'warm'
   return 'cold'
-}
-
-function toEditForm(lead: Lead): EditForm {
-  return {
-    name: lead.name || '',
-    email: lead.email || '',
-    budget: lead.budget || '',
-    routing_status: lead.routing_status || lead.category || '',
-  }
 }
 
 export default function LeadsPage({ onLoaded, onAddLead }: Props) {
@@ -74,11 +54,6 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
   const [category, setCategory] = useState<'all' | 'hot' | 'warm' | 'cold'>('all')
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
-  const [editing, setEditing] = useState(false)
-  const [editForm, setEditForm] = useState<EditForm | null>(null)
-  const [saving, setSaving] = useState(false)
-  const [saveMessage, setSaveMessage] = useState<string | null>(null)
-  const [saveWarning, setSaveWarning] = useState<string | null>(null)
 
   const loadLeads = useCallback(async (background = false) => {
     if (!supabase) {
@@ -101,15 +76,11 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
     if (loadError) {
       setError(loadError.message)
     } else {
-      const rows = data || []
+      const rows = (data || []) as Lead[]
       setLeads(rows)
       setLastUpdated(new Date())
       onLoaded?.(rows)
-
-      setSelectedLead((current) => {
-        if (!current) return null
-        return rows.find((lead) => lead.id === current.id) || null
-      })
+      setSelectedLead((current) => current ? rows.find((lead) => lead.id === current.id) || null : null)
     }
 
     setLoading(false)
@@ -119,25 +90,6 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
   useEffect(() => {
     void loadLeads()
   }, [loadLeads])
-
-  useEffect(() => {
-    if (!selectedLead) return
-
-    function closeOnEscape(event: KeyboardEvent) {
-      if (event.key !== 'Escape') return
-      if (editing) {
-        setEditing(false)
-        setEditForm(selectedLead ? toEditForm(selectedLead) : null)
-        setSaveMessage(null)
-        setSaveWarning(null)
-      } else {
-        setSelectedLead(null)
-      }
-    }
-
-    window.addEventListener('keydown', closeOnEscape)
-    return () => window.removeEventListener('keydown', closeOnEscape)
-  }, [selectedLead, editing])
 
   const filtered = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase()
@@ -161,118 +113,12 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
     cold: leads.filter((lead) => statusValue(lead).toLowerCase() === 'cold').length,
   }), [leads])
 
-  function openLead(lead: Lead) {
-    setSelectedLead(lead)
-    setEditing(false)
-    setEditForm(toEditForm(lead))
-    setSaveMessage(null)
-    setSaveWarning(null)
-  }
-
-  function startEditing() {
-    if (!selectedLead) return
-    setEditForm(toEditForm(selectedLead))
-    setEditing(true)
-    setSaveMessage(null)
-    setSaveWarning(null)
-  }
-
-  function cancelEditing() {
-    if (selectedLead) setEditForm(toEditForm(selectedLead))
-    setEditing(false)
-    setSaveMessage(null)
-    setSaveWarning(null)
-  }
-
-  function changeEditField(field: keyof EditForm, value: string) {
-    setEditForm((current) => current ? { ...current, [field]: value } : current)
-  }
-
-  async function triggerStatusAutomation(previousStatus: string, updatedLead: Lead) {
-    const response = await fetch(STATUS_WEBHOOK_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        event: 'routing_status_changed',
-        lead_id: updatedLead.id,
-        previous_status: previousStatus,
-        routing_status: updatedLead.routing_status,
-        changed_at: updatedLead.status_changed_at,
-        lead: {
-          name: updatedLead.name,
-          email: updatedLead.email,
-          budget: updatedLead.budget,
-          message: updatedLead.message,
-          category: updatedLead.category,
-          intent: updatedLead.intent,
-          summary: updatedLead.summary,
-          source: updatedLead.source,
-        },
-      }),
-    })
-
-    if (!response.ok) throw new Error(`n8n returned ${response.status}`)
-  }
-
-  async function saveLead(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (!selectedLead || !editForm || !supabase) return
-
-    setSaving(true)
-    setSaveMessage(null)
-    setSaveWarning(null)
-
-    const previousStatus = statusValue(selectedLead)
-    const nextStatus = editForm.routing_status.trim() || null
-    const routingChanged = (nextStatus || 'Unclassified') !== previousStatus
-
-    const updates: Database['public']['Tables']['leads']['Update'] = {
-      name: editForm.name.trim() || null,
-      email: editForm.email.trim() || null,
-      budget: editForm.budget.trim() || null,
-      routing_status: nextStatus,
-      ...(routingChanged ? { status_changed_at: new Date().toISOString() } : {}),
-    }
-
-    const { data, error: updateError } = await supabase
-      .from('leads')
-      .update(updates)
-      .eq('id', selectedLead.id)
-      .select('*')
-      .single()
-
-    if (updateError) {
-      setSaveMessage(updateError.message)
-      setSaving(false)
-      return
-    }
-
-    const updatedLead = data as Lead
+  function handleLeadUpdated(updatedLead: Lead) {
     const nextRows = leads.map((lead) => lead.id === updatedLead.id ? updatedLead : lead)
     setLeads(nextRows)
     setSelectedLead(updatedLead)
-    setEditForm(toEditForm(updatedLead))
-    setEditing(false)
     setLastUpdated(new Date())
     onLoaded?.(nextRows)
-
-    if (routingChanged && updatedLead.routing_status) {
-      try {
-        await triggerStatusAutomation(previousStatus, updatedLead)
-        setSaveMessage(`Saved and routed as ${updatedLead.routing_status}`)
-      } catch (automationError) {
-        setSaveMessage('Changes saved')
-        setSaveWarning(
-          automationError instanceof Error
-            ? `Routing status changed, but the n8n automation did not start: ${automationError.message}`
-            : 'Routing status changed, but the n8n automation did not start.'
-        )
-      }
-    } else {
-      setSaveMessage('Changes saved')
-    }
-
-    setSaving(false)
   }
 
   return (
@@ -355,11 +201,11 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
                     key={lead.id}
                     className="lead-table-row"
                     tabIndex={0}
-                    onClick={() => openLead(lead)}
+                    onClick={() => setSelectedLead(lead)}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter' || event.key === ' ') {
                         event.preventDefault()
-                        openLead(lead)
+                        setSelectedLead(lead)
                       }
                     }}
                     aria-label={`Open ${lead.name || 'lead'} details`}
@@ -394,125 +240,12 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
       </section>
 
       {selectedLead && (
-        <div className="lead-drawer-layer" role="presentation" onMouseDown={() => !editing && setSelectedLead(null)}>
-          <aside
-            className="lead-drawer"
-            role="dialog"
-            aria-modal="true"
-            aria-label={`${selectedLead.name || 'Lead'} details`}
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <div className="lead-drawer-header">
-              <div className="lead-drawer-identity">
-                <span className="lead-drawer-avatar">{initials(selectedLead.name)}</span>
-                <div>
-                  <span className="mini-label">LEAD PROFILE</span>
-                  <h2>{selectedLead.name || 'Unnamed lead'}</h2>
-                  <p>{selectedLead.email || 'No email address'}</p>
-                </div>
-              </div>
-              <button className="lead-drawer-close" type="button" onClick={() => setSelectedLead(null)} aria-label="Close lead details">×</button>
-            </div>
-
-            {!editing ? (
-              <>
-                <div className="lead-drawer-badges">
-                  <span className={`category-pill ${categoryClass(statusValue(selectedLead))}`}><i />Routing: {statusValue(selectedLead)}</span>
-                  <span className="lead-ai-pill">AI: {selectedLead.category || 'Unclassified'}</span>
-                  <span className="lead-intent-pill">{selectedLead.intent || 'No intent'}</span>
-                  <span className="lead-source-pill">{selectedLead.source || 'Unknown source'}</span>
-                </div>
-
-                <div className="lead-drawer-actions">
-                  {selectedLead.email ? (
-                    <a className="button primary" href={`mailto:${selectedLead.email}`}>Email lead</a>
-                  ) : (
-                    <button className="button primary" type="button" disabled>Email lead</button>
-                  )}
-                  <button className="button secondary" type="button" onClick={startEditing}>Edit lead</button>
-                  <button className="button secondary" type="button" onClick={() => void loadLeads(true)}>↻ Refresh</button>
-                </div>
-
-                {saveMessage && <div className="lead-save-success" role="status">✓ {saveMessage}</div>}
-                {saveWarning && <div className="lead-save-warning" role="alert">⚠ {saveWarning}</div>}
-
-                <div className="lead-detail-grid">
-                  <LeadDetail label="Budget" value={selectedLead.budget ? money(parseBudget(selectedLead.budget)) : 'Not provided'} />
-                  <LeadDetail label="Lead ID" value={`#${selectedLead.id}`} />
-                  <LeadDetail label="Added" value={new Date(selectedLead.created_at).toLocaleString('en-US', { month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })} />
-                  <LeadDetail label="Source" value={selectedLead.source || 'Unknown'} />
-                </div>
-
-                <section className="lead-drawer-section ai-section">
-                  <div className="lead-section-heading">
-                    <span className="spark-badge">✦</span>
-                    <div><span className="mini-label">AI CLASSIFICATION · LOCKED</span><h3>Lead summary</h3></div>
-                  </div>
-                  <p>{selectedLead.summary || 'No AI summary is available for this lead.'}</p>
-                </section>
-
-                <section className="lead-drawer-section">
-                  <span className="mini-label">ORIGINAL INQUIRY · LOCKED</span>
-                  <h3>Message</h3>
-                  <p className="lead-message">{selectedLead.message || 'No original message was saved.'}</p>
-                </section>
-              </>
-            ) : editForm && (
-              <form className="lead-edit-form" onSubmit={saveLead}>
-                <div className="lead-edit-intro">
-                  <span className="mini-label">EDIT RECORD</span>
-                  <h3>Update operational details</h3>
-                  <p>Contact fields can be corrected. Changing routing status also requests the matching n8n follow-up path.</p>
-                </div>
-
-                <div className="lead-edit-grid">
-                  <label><span>Name</span><input value={editForm.name} onChange={(event) => changeEditField('name', event.target.value)} /></label>
-                  <label><span>Email</span><input type="email" value={editForm.email} onChange={(event) => changeEditField('email', event.target.value)} /></label>
-                  <label><span>Budget</span><input value={editForm.budget} onChange={(event) => changeEditField('budget', event.target.value)} /></label>
-                  <label>
-                    <span>Routing status</span>
-                    <select value={editForm.routing_status} onChange={(event) => changeEditField('routing_status', event.target.value)}>
-                      <option value="">Unclassified</option>
-                      <option value="Hot">Hot</option>
-                      <option value="Warm">Warm</option>
-                      <option value="Cold">Cold</option>
-                    </select>
-                    <small className="field-helper">Changing this can trigger the matching n8n route.</small>
-                  </label>
-                </div>
-
-                <div className="locked-fields-card">
-                  <div className="locked-fields-heading">
-                    <span>🔒</span>
-                    <div><strong>Classification evidence is read-only</strong><p>AI category, intent, source, summary and original inquiry stay untouched so the original classification remains auditable.</p></div>
-                  </div>
-                  <div className="locked-fields-grid">
-                    <LeadDetail label="AI category" value={selectedLead.category || 'Unclassified'} />
-                    <LeadDetail label="Intent" value={selectedLead.intent || 'No intent'} />
-                    <LeadDetail label="Source" value={selectedLead.source || 'Unknown'} />
-                  </div>
-                </div>
-
-                {saveMessage && <div className="lead-save-error" role="alert">{saveMessage}</div>}
-
-                <div className="lead-edit-actions">
-                  <button className="button secondary" type="button" onClick={cancelEditing} disabled={saving}>Cancel</button>
-                  <button className="button primary" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</button>
-                </div>
-              </form>
-            )}
-          </aside>
-        </div>
+        <LeadProfileDrawer
+          lead={selectedLead}
+          onClose={() => setSelectedLead(null)}
+          onUpdated={handleLeadUpdated}
+        />
       )}
     </>
-  )
-}
-
-function LeadDetail({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="lead-detail-item">
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
   )
 }
