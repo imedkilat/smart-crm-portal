@@ -33,6 +33,30 @@ export type Database = {
         Update: Partial<Database['public']['Tables']['leads']['Insert']>
         Relationships: []
       }
+      lead_routing_history: {
+        Row: {
+          id: string
+          lead_id: number
+          from_status: string | null
+          to_status: string
+          changed_at: string
+          automation_triggered: boolean
+          automation_result: string
+          event_key: string
+        }
+        Insert: {
+          id?: string
+          lead_id: number
+          from_status?: string | null
+          to_status: string
+          changed_at?: string
+          automation_triggered?: boolean
+          automation_result?: string
+          event_key: string
+        }
+        Update: Partial<Database['public']['Tables']['lead_routing_history']['Insert']>
+        Relationships: []
+      }
       insights: {
         Row: {
           id: string
