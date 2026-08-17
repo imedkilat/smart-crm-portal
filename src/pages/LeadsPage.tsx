@@ -14,12 +14,12 @@ type EditForm = {
   name: string
   email: string
   budget: string
-  category: string
-  intent: string
-  source: string
-  summary: string
-  message: string
+  routing_status: string
 }
+
+const STATUS_WEBHOOK_URL =
+  import.meta.env.VITE_N8N_STATUS_WEBHOOK_URL ||
+  'https://tolakautomations.app.n8n.cloud/webhook-test/smart-crm-status-route'
 
 function initials(name: string | null) {
   if (!name) return '—'
@@ -45,6 +45,10 @@ function money(value: number) {
   }).format(value)
 }
 
+function statusValue(lead: Lead) {
+  return lead.routing_status || lead.category || 'Unclassified'
+}
+
 function categoryClass(category: string | null) {
   const value = (category || '').toLowerCase()
   if (value === 'hot') return 'hot'
@@ -57,11 +61,7 @@ function toEditForm(lead: Lead): EditForm {
     name: lead.name || '',
     email: lead.email || '',
     budget: lead.budget || '',
-    category: lead.category || '',
-    intent: lead.intent || '',
-    source: lead.source || '',
-    summary: lead.summary || '',
-    message: lead.message || '',
+    routing_status: lead.routing_status || lead.category || '',
   }
 }
 
@@ -78,6 +78,7 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
   const [editForm, setEditForm] = useState<EditForm | null>(null)
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
+  const [saveWarning, setSaveWarning] = useState<string | null>(null)
 
   const loadLeads = useCallback(async (background = false) => {
     if (!supabase) {
@@ -128,6 +129,7 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
         setEditing(false)
         setEditForm(selectedLead ? toEditForm(selectedLead) : null)
         setSaveMessage(null)
+        setSaveWarning(null)
       } else {
         setSelectedLead(null)
       }
@@ -141,11 +143,12 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
     const normalizedQuery = query.trim().toLowerCase()
 
     return leads.filter((lead) => {
-      const matchesCategory = category === 'all' || lead.category?.toLowerCase() === category
+      const routing = statusValue(lead).toLowerCase()
+      const matchesCategory = category === 'all' || routing === category
       if (!matchesCategory) return false
       if (!normalizedQuery) return true
 
-      return [lead.name, lead.email, lead.intent, lead.category, lead.source, lead.summary, lead.message]
+      return [lead.name, lead.email, lead.intent, lead.category, lead.routing_status, lead.source, lead.summary, lead.message]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(normalizedQuery))
     })
@@ -153,9 +156,9 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
 
   const counts = useMemo(() => ({
     all: leads.length,
-    hot: leads.filter((lead) => lead.category?.toLowerCase() === 'hot').length,
-    warm: leads.filter((lead) => lead.category?.toLowerCase() === 'warm').length,
-    cold: leads.filter((lead) => lead.category?.toLowerCase() === 'cold').length,
+    hot: leads.filter((lead) => statusValue(lead).toLowerCase() === 'hot').length,
+    warm: leads.filter((lead) => statusValue(lead).toLowerCase() === 'warm').length,
+    cold: leads.filter((lead) => statusValue(lead).toLowerCase() === 'cold').length,
   }), [leads])
 
   function openLead(lead: Lead) {
@@ -163,6 +166,7 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
     setEditing(false)
     setEditForm(toEditForm(lead))
     setSaveMessage(null)
+    setSaveWarning(null)
   }
 
   function startEditing() {
@@ -170,16 +174,44 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
     setEditForm(toEditForm(selectedLead))
     setEditing(true)
     setSaveMessage(null)
+    setSaveWarning(null)
   }
 
   function cancelEditing() {
     if (selectedLead) setEditForm(toEditForm(selectedLead))
     setEditing(false)
     setSaveMessage(null)
+    setSaveWarning(null)
   }
 
   function changeEditField(field: keyof EditForm, value: string) {
     setEditForm((current) => current ? { ...current, [field]: value } : current)
+  }
+
+  async function triggerStatusAutomation(previousStatus: string, updatedLead: Lead) {
+    const response = await fetch(STATUS_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        event: 'routing_status_changed',
+        lead_id: updatedLead.id,
+        previous_status: previousStatus,
+        routing_status: updatedLead.routing_status,
+        changed_at: updatedLead.status_changed_at,
+        lead: {
+          name: updatedLead.name,
+          email: updatedLead.email,
+          budget: updatedLead.budget,
+          message: updatedLead.message,
+          category: updatedLead.category,
+          intent: updatedLead.intent,
+          summary: updatedLead.summary,
+          source: updatedLead.source,
+        },
+      }),
+    })
+
+    if (!response.ok) throw new Error(`n8n returned ${response.status}`)
   }
 
   async function saveLead(event: FormEvent<HTMLFormElement>) {
@@ -188,16 +220,18 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
 
     setSaving(true)
     setSaveMessage(null)
+    setSaveWarning(null)
+
+    const previousStatus = statusValue(selectedLead)
+    const nextStatus = editForm.routing_status.trim() || null
+    const routingChanged = (nextStatus || 'Unclassified') !== previousStatus
 
     const updates: Database['public']['Tables']['leads']['Update'] = {
       name: editForm.name.trim() || null,
       email: editForm.email.trim() || null,
       budget: editForm.budget.trim() || null,
-      category: editForm.category.trim() || null,
-      intent: editForm.intent.trim() || null,
-      source: editForm.source.trim() || null,
-      summary: editForm.summary.trim() || null,
-      message: editForm.message.trim() || null,
+      routing_status: nextStatus,
+      ...(routingChanged ? { status_changed_at: new Date().toISOString() } : {}),
     }
 
     const { data, error: updateError } = await supabase
@@ -219,9 +253,25 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
     setSelectedLead(updatedLead)
     setEditForm(toEditForm(updatedLead))
     setEditing(false)
-    setSaveMessage('Changes saved')
     setLastUpdated(new Date())
     onLoaded?.(nextRows)
+
+    if (routingChanged && updatedLead.routing_status) {
+      try {
+        await triggerStatusAutomation(previousStatus, updatedLead)
+        setSaveMessage(`Saved and routed as ${updatedLead.routing_status}`)
+      } catch (automationError) {
+        setSaveMessage('Changes saved')
+        setSaveWarning(
+          automationError instanceof Error
+            ? `Routing status changed, but the n8n automation did not start: ${automationError.message}`
+            : 'Routing status changed, but the n8n automation did not start.'
+        )
+      }
+    } else {
+      setSaveMessage('Changes saved')
+    }
+
     setSaving(false)
   }
 
@@ -238,7 +288,7 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
 
       {error && <div className="error-banner">Could not load leads: {error}</div>}
 
-      <section className="lead-stat-strip" aria-label="Lead status counts">
+      <section className="lead-stat-strip" aria-label="Routing status counts">
         {(['all', 'hot', 'warm', 'cold'] as const).map((item) => (
           <button
             key={item}
@@ -290,7 +340,7 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
               <tr>
                 <th>Lead</th>
                 <th>Intent</th>
-                <th>Status</th>
+                <th>Routing status</th>
                 <th>Budget</th>
                 <th>Source</th>
                 <th>AI summary</th>
@@ -298,43 +348,40 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((lead) => (
-                <tr
-                  key={lead.id}
-                  className="lead-table-row"
-                  tabIndex={0}
-                  onClick={() => openLead(lead)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault()
-                      openLead(lead)
-                    }
-                  }}
-                  aria-label={`Open ${lead.name || 'lead'} details`}
-                >
-                  <td>
-                    <div className="lead-cell">
-                      <span className="avatar">{initials(lead.name)}</span>
-                      <div>
-                        <strong>{lead.name || 'Unnamed lead'}</strong>
-                        <span>{lead.email || 'No email'}</span>
+              {filtered.map((lead) => {
+                const routing = statusValue(lead)
+                return (
+                  <tr
+                    key={lead.id}
+                    className="lead-table-row"
+                    tabIndex={0}
+                    onClick={() => openLead(lead)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault()
+                        openLead(lead)
+                      }
+                    }}
+                    aria-label={`Open ${lead.name || 'lead'} details`}
+                  >
+                    <td>
+                      <div className="lead-cell">
+                        <span className="avatar">{initials(lead.name)}</span>
+                        <div>
+                          <strong>{lead.name || 'Unnamed lead'}</strong>
+                          <span>{lead.email || 'No email'}</span>
+                        </div>
                       </div>
-                    </div>
-                  </td>
-                  <td>{lead.intent || '—'}</td>
-                  <td>
-                    <span className={`category-pill ${categoryClass(lead.category)}`}>
-                      <i />{lead.category || 'Unclassified'}
-                    </span>
-                  </td>
-                  <td>{lead.budget ? money(parseBudget(lead.budget)) : '—'}</td>
-                  <td>{lead.source || '—'}</td>
-                  <td className="summary-cell" title={lead.summary || lead.message || ''}>
-                    {lead.summary || lead.message || '—'}
-                  </td>
-                  <td>{new Date(lead.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</td>
-                </tr>
-              ))}
+                    </td>
+                    <td>{lead.intent || '—'}</td>
+                    <td><span className={`category-pill ${categoryClass(routing)}`}><i />{routing}</span></td>
+                    <td>{lead.budget ? money(parseBudget(lead.budget)) : '—'}</td>
+                    <td>{lead.source || '—'}</td>
+                    <td className="summary-cell" title={lead.summary || lead.message || ''}>{lead.summary || lead.message || '—'}</td>
+                    <td>{new Date(lead.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</td>
+                  </tr>
+                )
+              })}
               {!loading && filtered.length === 0 && (
                 <tr><td className="empty-cell" colSpan={7}>No leads match this view.</td></tr>
               )}
@@ -370,7 +417,8 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
             {!editing ? (
               <>
                 <div className="lead-drawer-badges">
-                  <span className={`category-pill ${categoryClass(selectedLead.category)}`}><i />{selectedLead.category || 'Unclassified'}</span>
+                  <span className={`category-pill ${categoryClass(statusValue(selectedLead))}`}><i />Routing: {statusValue(selectedLead)}</span>
+                  <span className="lead-ai-pill">AI: {selectedLead.category || 'Unclassified'}</span>
                   <span className="lead-intent-pill">{selectedLead.intent || 'No intent'}</span>
                   <span className="lead-source-pill">{selectedLead.source || 'Unknown source'}</span>
                 </div>
@@ -386,6 +434,7 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
                 </div>
 
                 {saveMessage && <div className="lead-save-success" role="status">✓ {saveMessage}</div>}
+                {saveWarning && <div className="lead-save-warning" role="alert">⚠ {saveWarning}</div>}
 
                 <div className="lead-detail-grid">
                   <LeadDetail label="Budget" value={selectedLead.budget ? money(parseBudget(selectedLead.budget)) : 'Not provided'} />
@@ -397,13 +446,13 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
                 <section className="lead-drawer-section ai-section">
                   <div className="lead-section-heading">
                     <span className="spark-badge">✦</span>
-                    <div><span className="mini-label">AI CLASSIFICATION</span><h3>Lead summary</h3></div>
+                    <div><span className="mini-label">AI CLASSIFICATION · LOCKED</span><h3>Lead summary</h3></div>
                   </div>
                   <p>{selectedLead.summary || 'No AI summary is available for this lead.'}</p>
                 </section>
 
                 <section className="lead-drawer-section">
-                  <span className="mini-label">ORIGINAL INQUIRY</span>
+                  <span className="mini-label">ORIGINAL INQUIRY · LOCKED</span>
                   <h3>Message</h3>
                   <p className="lead-message">{selectedLead.message || 'No original message was saved.'}</p>
                 </section>
@@ -412,8 +461,8 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
               <form className="lead-edit-form" onSubmit={saveLead}>
                 <div className="lead-edit-intro">
                   <span className="mini-label">EDIT RECORD</span>
-                  <h3>Update lead details</h3>
-                  <p>Changes are written directly to the Supabase lead record.</p>
+                  <h3>Update operational details</h3>
+                  <p>Contact fields can be corrected. Changing routing status also requests the matching n8n follow-up path.</p>
                 </div>
 
                 <div className="lead-edit-grid">
@@ -421,26 +470,27 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
                   <label><span>Email</span><input type="email" value={editForm.email} onChange={(event) => changeEditField('email', event.target.value)} /></label>
                   <label><span>Budget</span><input value={editForm.budget} onChange={(event) => changeEditField('budget', event.target.value)} /></label>
                   <label>
-                    <span>Status</span>
-                    <select value={editForm.category} onChange={(event) => changeEditField('category', event.target.value)}>
+                    <span>Routing status</span>
+                    <select value={editForm.routing_status} onChange={(event) => changeEditField('routing_status', event.target.value)}>
                       <option value="">Unclassified</option>
                       <option value="Hot">Hot</option>
                       <option value="Warm">Warm</option>
                       <option value="Cold">Cold</option>
                     </select>
+                    <small className="field-helper">Changing this can trigger the matching n8n route.</small>
                   </label>
-                  <label>
-                    <span>Intent</span>
-                    <select value={editForm.intent} onChange={(event) => changeEditField('intent', event.target.value)}>
-                      <option value="">No intent</option>
-                      <option value="Inquiry">Inquiry</option>
-                      <option value="Partnership">Partnership</option>
-                      <option value="Purchase">Purchase</option>
-                    </select>
-                  </label>
-                  <label><span>Source</span><input value={editForm.source} onChange={(event) => changeEditField('source', event.target.value)} /></label>
-                  <label className="lead-edit-full"><span>AI summary</span><textarea rows={4} value={editForm.summary} onChange={(event) => changeEditField('summary', event.target.value)} /></label>
-                  <label className="lead-edit-full"><span>Original message</span><textarea rows={6} value={editForm.message} onChange={(event) => changeEditField('message', event.target.value)} /></label>
+                </div>
+
+                <div className="locked-fields-card">
+                  <div className="locked-fields-heading">
+                    <span>🔒</span>
+                    <div><strong>Classification evidence is read-only</strong><p>AI category, intent, source, summary and original inquiry stay untouched so the original classification remains auditable.</p></div>
+                  </div>
+                  <div className="locked-fields-grid">
+                    <LeadDetail label="AI category" value={selectedLead.category || 'Unclassified'} />
+                    <LeadDetail label="Intent" value={selectedLead.intent || 'No intent'} />
+                    <LeadDetail label="Source" value={selectedLead.source || 'Unknown'} />
+                  </div>
                 </div>
 
                 {saveMessage && <div className="lead-save-error" role="alert">{saveMessage}</div>}
