@@ -1,12 +1,14 @@
 import { StrictMode, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App'
+import GlobalSearch from './components/GlobalSearch'
 import Login from './pages/Login'
 import ResetPassword from './pages/ResetPassword'
 import { signOut } from './lib/auth'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 import './styles.css'
 import './session.css'
+import './global-search.css'
 
 function currentRoute() {
   return window.location.pathname.replace(/\/+$/, '') || '/'
@@ -116,6 +118,7 @@ function AuthRouter() {
   return (
     <>
       <App />
+      <GlobalSearch />
       <button
         className="session-signout"
         type="button"
