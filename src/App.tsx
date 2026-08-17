@@ -5,12 +5,15 @@ import LeadProfileDrawer from './components/LeadProfileDrawer'
 import LeadsPage from './pages/LeadsPage'
 import AddLeadPage from './pages/AddLeadPage'
 import ReportsPage from './pages/ReportsPage'
+import AutomationPage from './pages/AutomationPage'
+import SettingsPage from './pages/SettingsPage'
 import './analytics.css'
 import './crm-pages.css'
+import './system-pages.css'
 
 type Lead = Database['public']['Tables']['leads']['Row']
 type WeeklySummary = Database['public']['Tables']['weekly_summary']['Row']
-type Page = 'dashboard' | 'leads' | 'add' | 'analytics' | 'reports' | 'settings'
+type Page = 'dashboard' | 'leads' | 'add' | 'automation' | 'analytics' | 'reports' | 'settings'
 
 type NavItem = {
   id: Page
@@ -22,6 +25,7 @@ const navItems: NavItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: '⌂' },
   { id: 'leads', label: 'Leads', icon: '◌' },
   { id: 'add', label: 'Add Lead', icon: '+' },
+  { id: 'automation', label: 'Automation', icon: '⌁' },
   { id: 'analytics', label: 'Analytics', icon: '↗' },
   { id: 'reports', label: 'Reports', icon: '▤' },
   { id: 'settings', label: 'Settings', icon: '⚙' },
@@ -96,7 +100,7 @@ export default function App() {
       setError(null)
 
       const [leadsResult, weeklyResult] = await Promise.all([
-        supabase.from('leads').select('*').order('created_at', { ascending: false }),
+        supabase.from('leads').select('*').is('archived_at', null).order('created_at', { ascending: false }),
         supabase.from('weekly_summary').select('*').order('created_at', { ascending: false }).limit(1),
       ])
 
@@ -126,6 +130,11 @@ export default function App() {
   }, [])
 
   const handleDashboardLeadUpdated = useCallback((updatedLead: Lead) => {
+    if (updatedLead.archived_at) {
+      setLeads((current) => current.filter((lead) => lead.id !== updatedLead.id))
+      setSelectedDashboardLead(null)
+      return
+    }
     setLeads((current) => current.map((lead) => lead.id === updatedLead.id ? updatedLead : lead))
     setSelectedDashboardLead(updatedLead)
   }, [])
@@ -221,20 +230,15 @@ export default function App() {
             <AddLeadPage onCreated={() => setPage('leads')} />
           )}
 
+          {page === 'automation' && <AutomationPage />}
+
           {page === 'analytics' && (
             <AnalyticsPage leads={leads} metrics={metrics} weeklySummary={weeklySummary} loading={loading} />
           )}
 
           {page === 'reports' && <ReportsPage />}
 
-          {page === 'settings' && (
-            <section className="placeholder-page">
-              <span className="mini-label">SMART CRM PORTAL · V2</span>
-              <h1>Settings</h1>
-              <p>The workspace settings screen is the final remaining product page to connect.</p>
-              <button className="button primary" type="button" onClick={() => setPage('dashboard')}>Back to dashboard</button>
-            </section>
-          )}
+          {page === 'settings' && <SettingsPage onOpenRunLog={() => setPage('automation')} />}
         </main>
       </div>
 
@@ -289,11 +293,11 @@ function DashboardPage({
       {error && <div className="error-banner">Could not load CRM data: {error}</div>}
 
       <section className="kpi-grid" aria-label="Lead metrics">
-        <MetricCard label="Total leads" value={loading ? '—' : String(metrics.total)} tone="blue" note="Stored in Supabase" />
+        <MetricCard label="Total leads" value={loading ? '—' : String(metrics.total)} tone="blue" note="Active in Supabase" />
         <MetricCard label="Hot" value={loading ? '—' : String(metrics.hot)} tone="red" note="Hot routing priority" />
         <MetricCard label="Warm" value={loading ? '—' : String(metrics.warm)} tone="amber" note="Warm routing priority" />
         <MetricCard label="Cold" value={loading ? '—' : String(metrics.cold)} tone="cyan" note="Cold routing priority" />
-        <MetricCard label="Pipeline value" value={loading ? '—' : money(metrics.pipeline)} tone="violet" note="From lead budgets" wide />
+        <MetricCard label="Pipeline value" value={loading ? '—' : money(metrics.pipeline)} tone="violet" note="From active lead budgets" wide />
       </section>
 
       <section className="automation-card">
@@ -302,11 +306,11 @@ function DashboardPage({
           <div>
             <div className="title-row">
               <h2>Automation pipeline</h2>
-              <span className="health-pill"><span /> All systems running</span>
+              <span className="health-pill"><span /> Production routing</span>
             </div>
             <p>Every lead moves through a structured automation flow before reporting.</p>
           </div>
-          <button className="button tertiary" type="button">View run log</button>
+          <button className="button tertiary" type="button" onClick={() => setPage('automation')}>View run log</button>
         </div>
 
         <div className="workflow-grid">
@@ -421,7 +425,7 @@ function DashboardPage({
                 )
               })}
               {!loading && recentLeads.length === 0 && (
-                <tr><td className="empty-cell" colSpan={6}>No leads yet.</td></tr>
+                <tr><td className="empty-cell" colSpan={6}>No active leads yet.</td></tr>
               )}
             </tbody>
           </table>
@@ -512,14 +516,14 @@ function AnalyticsPage({
         <div>
           <div className="eyebrow">LIVE PIPELINE INTELLIGENCE</div>
           <h1>Analytics</h1>
-          <p>Lead routing, acquisition, intent and budget signals from your Supabase data.</p>
+          <p>Lead routing, acquisition, intent and budget signals from your active Supabase data.</p>
         </div>
         <span className="analytics-live"><i /> Live data</span>
       </section>
 
       <section className="analytics-kpis">
         <AnalyticsMetric label="Hot routing share" value={loading ? '—' : `${hotShare}%`} note={`${metrics.hot} of ${metrics.total} leads`} accent="red" />
-        <AnalyticsMetric label="Average lead budget" value={loading ? '—' : money(avgBudget)} note="Across stored records" accent="violet" />
+        <AnalyticsMetric label="Average lead budget" value={loading ? '—' : money(avgBudget)} note="Across active records" accent="violet" />
         <AnalyticsMetric label="Top source" value={loading ? '—' : dominantSource?.label || '—'} note={dominantSource ? `${dominantSource.count} leads captured` : 'No source data'} accent="blue" />
         <AnalyticsMetric label="Primary intent" value={loading ? '—' : dominantIntent?.label || '—'} note={dominantIntent ? `${percent(dominantIntent.count, metrics.total)}% of pipeline` : 'No intent data'} accent="amber" />
       </section>
