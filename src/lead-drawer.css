@@ -1,0 +1,130 @@
+.lead-table-row { cursor: pointer; transition: background .16s ease, box-shadow .16s ease; }
+.lead-table-row:hover { background: #f8faff; }
+.lead-table-row:focus { outline: none; background: #f5f8ff; box-shadow: inset 3px 0 0 #2563eb; }
+
+.lead-drawer-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(15, 23, 42, .28);
+  backdrop-filter: blur(2px);
+  animation: lead-layer-in .18s ease both;
+}
+
+.lead-drawer {
+  width: min(520px, 100%);
+  height: 100%;
+  overflow-y: auto;
+  padding: 24px;
+  border-left: 1px solid #e6eaf2;
+  background: #fbfcfe;
+  box-shadow: -24px 0 70px -38px rgba(15, 23, 42, .52);
+  animation: lead-drawer-in .24s cubic-bezier(.2, .8, .2, 1) both;
+}
+
+@keyframes lead-layer-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes lead-drawer-in { from { transform: translateX(34px); opacity: .6; } to { transform: translateX(0); opacity: 1; } }
+
+.lead-drawer-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding-bottom: 19px;
+  border-bottom: 1px solid #e9edf4;
+}
+
+.lead-drawer-identity { display: flex; align-items: center; gap: 13px; min-width: 0; }
+.lead-drawer-avatar {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  border-radius: 15px;
+  background: linear-gradient(145deg, #edf4ff, #dfeaff);
+  color: #1d4ed8;
+  font-size: 13px;
+  font-weight: 850;
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, .07);
+}
+.lead-drawer-identity h2 { margin: 4px 0 0; color: #111827; font-size: 22px; letter-spacing: -.035em; }
+.lead-drawer-identity p { margin: 4px 0 0; overflow: hidden; color: #7b8498; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+
+.lead-drawer-close {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  border: 1px solid #e2e6ee;
+  border-radius: 10px;
+  background: #fff;
+  color: #7a8497;
+  font-size: 21px;
+  line-height: 1;
+  cursor: pointer;
+}
+.lead-drawer-close:hover { border-color: #cfd6e2; color: #344054; }
+
+.lead-drawer-badges { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 17px; }
+.lead-intent-pill,
+.lead-source-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 9px;
+  border: 1px solid #e2e6ee;
+  border-radius: 999px;
+  background: #fff;
+  color: #5e687a;
+  font-size: 10.5px;
+  font-weight: 700;
+}
+.lead-source-pill { background: #f6f8fb; }
+
+.lead-drawer-actions { display: flex; gap: 9px; margin: 17px 0; }
+.lead-drawer-actions .button { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
+
+.lead-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.lead-detail-item {
+  min-width: 0;
+  padding: 13px 14px;
+  border: 1px solid #e7eaf1;
+  border-radius: 12px;
+  background: #fff;
+}
+.lead-detail-item span { display: block; color: #98a2b3; font-size: 9.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.lead-detail-item strong { display: block; margin-top: 5px; overflow: hidden; color: #344054; font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
+
+.lead-drawer-section {
+  margin-top: 13px;
+  padding: 17px;
+  border: 1px solid #e7eaf1;
+  border-radius: 14px;
+  background: #fff;
+}
+.lead-drawer-section.ai-section {
+  background:
+    radial-gradient(circle at 92% 8%, rgba(37, 99, 235, .09), transparent 30%),
+    #fff;
+}
+.lead-section-heading { display: flex; align-items: center; gap: 10px; }
+.lead-section-heading .spark-badge { flex: none; }
+.lead-drawer-section h3 { margin: 4px 0 0; color: #27344b; font-size: 14px; letter-spacing: -.015em; }
+.lead-drawer-section > h3 { margin: 5px 0 0; }
+.lead-drawer-section p { margin: 11px 0 0; color: #667085; font-size: 12.5px; line-height: 1.65; }
+.lead-message { white-space: pre-wrap; }
+
+@media (max-width: 640px) {
+  .lead-drawer { padding: 19px; }
+  .lead-detail-grid { grid-template-columns: 1fr; }
+  .lead-drawer-actions { align-items: stretch; flex-direction: column; }
+  .lead-drawer-actions .button { width: 100%; }
+}
