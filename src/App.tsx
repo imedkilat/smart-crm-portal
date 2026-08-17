@@ -1,7 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from './lib/supabase'
 import type { Database } from './types/database'
+import LeadsPage from './pages/LeadsPage'
+import AddLeadPage from './pages/AddLeadPage'
+import ReportsPage from './pages/ReportsPage'
 import './analytics.css'
+import './crm-pages.css'
 
 type Lead = Database['public']['Tables']['leads']['Row']
 type WeeklySummary = Database['public']['Tables']['weekly_summary']['Row']
@@ -111,6 +115,10 @@ export default function App() {
     }
   }, [])
 
+  const handleLeadsLoaded = useCallback((rows: Lead[]) => {
+    setLeads(rows)
+  }, [])
+
   const metrics = useMemo(() => {
     const total = leads.length
     const hot = leads.filter((lead) => lead.category?.toLowerCase() === 'hot').length
@@ -193,15 +201,25 @@ export default function App() {
             />
           )}
 
+          {page === 'leads' && (
+            <LeadsPage onLoaded={handleLeadsLoaded} onAddLead={() => setPage('add')} />
+          )}
+
+          {page === 'add' && (
+            <AddLeadPage onCreated={() => setPage('leads')} />
+          )}
+
           {page === 'analytics' && (
             <AnalyticsPage leads={leads} metrics={metrics} weeklySummary={weeklySummary} loading={loading} />
           )}
 
-          {page !== 'dashboard' && page !== 'analytics' && (
+          {page === 'reports' && <ReportsPage />}
+
+          {page === 'settings' && (
             <section className="placeholder-page">
               <span className="mini-label">SMART CRM PORTAL · V2</span>
-              <h1>{navItems.find((item) => item.id === page)?.label}</h1>
-              <p>The design shell is wired. We&apos;ll connect this screen to the real workflow in the next build pass.</p>
+              <h1>Settings</h1>
+              <p>The workspace settings screen is the final remaining product page to connect.</p>
               <button className="button primary" type="button" onClick={() => setPage('dashboard')}>Back to dashboard</button>
             </section>
           )}
