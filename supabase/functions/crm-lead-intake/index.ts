@@ -46,7 +46,11 @@ Deno.serve(async (req: Request) => {
     const contentType = req.headers.get('content-type') || 'application/octet-stream'
     const upstream = await fetch(N8N_URL, {
       method: 'POST',
-      headers: { 'content-type': contentType, 'x-smart-crm-ingress': 'supabase-edge' },
+      headers: {
+        'content-type': contentType,
+        'authorization': authHeader,
+        'x-smart-crm-ingress': 'supabase-edge',
+      },
       body: await req.arrayBuffer(),
     })
 
