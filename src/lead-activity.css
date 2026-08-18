@@ -1,0 +1,17 @@
+.lead-activity-section { margin-top: 18px; }
+.lead-activity-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+.lead-activity-heading h3 { margin: 3px 0 0; }
+.lead-activity-heading p { margin: 4px 0 0; color: #7a8498; font-size: 11px; }
+.lead-activity-list { display: grid; gap: 0; }
+.lead-activity-item { position: relative; display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 10px 0; }
+.lead-activity-item:not(:last-child)::after { content: ''; position: absolute; left: 14px; top: 38px; bottom: -2px; width: 1px; background: #e7eaf0; }
+.lead-activity-icon { width: 30px; height: 30px; border-radius: 999px; display: grid; place-items: center; background: #eef4ff; color: #3157b7; font-size: 12px; font-weight: 700; z-index: 1; }
+.lead-activity-icon.note_added { background: #f4f3ff; color: #6938ef; }
+.lead-activity-icon.task_created { background: #fffaeb; color: #b54708; }
+.lead-activity-icon.task_completed { background: #ecfdf3; color: #067647; }
+.lead-activity-icon.task_reopened { background: #fff4ed; color: #c4320a; }
+.lead-activity-icon.pipeline_stage_changed { background: #eef4ff; color: #3538cd; }
+.lead-activity-copy strong { display: block; color: #1f2937; font-size: 12px; }
+.lead-activity-copy span { display: block; margin-top: 2px; color: #7a8498; font-size: 10px; line-height: 1.4; }
+.lead-activity-item time { color: #98a2b3; font-size: 9px; white-space: nowrap; }
+.lead-activity-empty { margin: 0; color: #98a2b3; font-size: 11px; }
