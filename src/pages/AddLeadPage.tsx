@@ -15,6 +15,7 @@ export default function AddLeadPage({ onCreated }: Props) {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [budget, setBudget] = useState('')
+  const [currencyCode, setCurrencyCode] = useState('USD')
   const [message, setMessage] = useState('')
   const [submitState, setSubmitState] = useState<SubmitState>('idle')
   const [feedback, setFeedback] = useState('')
@@ -34,6 +35,7 @@ export default function AddLeadPage({ onCreated }: Props) {
         name: name.trim(),
         email: email.trim(),
         budget: budget.trim(),
+        currency_code: currencyCode,
         message: message.trim(),
       })
 
@@ -42,6 +44,7 @@ export default function AddLeadPage({ onCreated }: Props) {
       setName('')
       setEmail('')
       setBudget('')
+      setCurrencyCode('USD')
       setMessage('')
       onCreated?.()
     } catch (error) {
@@ -118,9 +121,17 @@ export default function AddLeadPage({ onCreated }: Props) {
               <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="jordan@company.com" type="email" required />
             </label>
 
-            <label className="crm-field crm-field-full">
+            <label className="crm-field">
               <span>Budget</span>
-              <input value={budget} onChange={(event) => setBudget(event.target.value)} placeholder="e.g. 5000 or $5,000" inputMode="decimal" />
+              <input value={budget} onChange={(event) => setBudget(event.target.value)} placeholder="e.g. 5000" inputMode="decimal" />
+            </label>
+
+            <label className="crm-field">
+              <span>Currency</span>
+              <select value={currencyCode} onChange={(event) => setCurrencyCode(event.target.value)}>
+                <option value="USD">USD · US Dollar</option>
+                <option value="PHP">PHP · Philippine Peso</option>
+              </select>
             </label>
 
             <label className="crm-field crm-field-full">
@@ -137,7 +148,7 @@ export default function AddLeadPage({ onCreated }: Props) {
 
           <div className="form-submit-row">
             <div className={`form-feedback ${submitState}`}>
-              {feedback || 'The workflow will classify this as Hot, Warm or Cold and identify its intent.'}
+              {feedback || 'Budget currency is preserved. AI classification does not convert the amount.'}
             </div>
             <button className="button primary submit-lead-button" type="submit" disabled={submitState === 'submitting'}>
               {submitState === 'submitting' ? 'Processing…' : 'Classify & add lead'}
@@ -167,7 +178,7 @@ export default function AddLeadPage({ onCreated }: Props) {
           <article className="panel excel-upload-card">
             <span className="mini-label">BULK INTAKE</span>
             <h2>Upload Excel leads</h2>
-            <p>Send an .xlsx workbook through the same workflow for row-by-row AI classification.</p>
+            <p>Send an .xlsx workbook through the same workflow for row-by-row AI classification. An optional <strong>Currency</strong> column can use ISO codes such as USD or PHP; rows without one default to USD.</p>
             <label className="file-drop">
               <input ref={fileRef} type="file" accept=".xlsx" />
               <span className="file-icon">⇧</span>
