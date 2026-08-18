@@ -6,6 +6,7 @@ export type Database = {
           id: number
           public_id: string
           workspace_id: string | null
+          pipeline_stage_id: string | null
           created_at: string
           name: string | null
           email: string | null
@@ -24,6 +25,7 @@ export type Database = {
           id?: number
           public_id?: string
           workspace_id?: string | null
+          pipeline_stage_id?: string | null
           created_at?: string
           name?: string | null
           email?: string | null
@@ -77,6 +79,78 @@ export type Database = {
           created_at?: string
         }
         Update: Partial<Database['public']['Tables']['workspace_members']['Insert']>
+        Relationships: []
+      }
+      pipelines: {
+        Row: {
+          id: string
+          public_id: string
+          workspace_id: string
+          name: string
+          is_default: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          public_id?: string
+          workspace_id: string
+          name: string
+          is_default?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['pipelines']['Insert']>
+        Relationships: []
+      }
+      pipeline_stages: {
+        Row: {
+          id: string
+          public_id: string
+          pipeline_id: string
+          workspace_id: string
+          name: string
+          position: number
+          stage_type: 'open' | 'won' | 'lost'
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          public_id?: string
+          pipeline_id: string
+          workspace_id: string
+          name: string
+          position: number
+          stage_type?: 'open' | 'won' | 'lost'
+          created_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['pipeline_stages']['Insert']>
+        Relationships: []
+      }
+      lead_activities: {
+        Row: {
+          id: string
+          public_id: string
+          workspace_id: string
+          lead_id: number
+          activity_type: string
+          title: string
+          metadata: Record<string, unknown>
+          actor_user_id: string | null
+          occurred_at: string
+        }
+        Insert: {
+          id?: string
+          public_id?: string
+          workspace_id: string
+          lead_id: number
+          activity_type: string
+          title: string
+          metadata?: Record<string, unknown>
+          actor_user_id?: string | null
+          occurred_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['lead_activities']['Insert']>
         Relationships: []
       }
       lead_notes: {
