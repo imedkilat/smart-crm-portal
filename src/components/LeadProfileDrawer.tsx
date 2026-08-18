@@ -3,9 +3,12 @@ import { supabase } from '../lib/supabase'
 import { formatLeadBudget } from '../lib/currency'
 import type { Database } from '../types/database'
 import '../lead-drawer.css'
+import '../lead-ops.css'
 
 type Lead = Database['public']['Tables']['leads']['Row']
 type RoutingHistory = Database['public']['Tables']['lead_routing_history']['Row']
+type LeadNote = Database['public']['Tables']['lead_notes']['Row']
+type LeadTask = Database['public']['Tables']['lead_tasks']['Row']
 
 type Props = {
   lead: Lead
@@ -17,7 +20,6 @@ type EditForm = {
   name: string
   email: string
   budget: string
-  currency_code: string
   routing_status: string
 }
 
@@ -44,7 +46,6 @@ function toEditForm(lead: Lead): EditForm {
     name: lead.name || '',
     email: lead.email || '',
     budget: lead.budget || '',
-    currency_code: lead.currency_code || 'USD',
     routing_status: lead.routing_status || lead.category || '',
   }
 }
@@ -54,6 +55,15 @@ function routingResultLabel(item: RoutingHistory) {
   if (item.automation_result === 'suppressed_24h') return 'Automation suppressed'
   if (item.automation_result === 'failed') return 'Automation failed'
   return item.automation_result.replace(/_/g, ' ')
+}
+
+function formatActivityDate(value: string) {
+  return new Date(value).toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
 }
 
 export default function LeadProfileDrawer({ lead, onClose, onUpdated }: Props) {
@@ -67,6 +77,16 @@ export default function LeadProfileDrawer({ lead, onClose, onUpdated }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [routingHistory, setRoutingHistory] = useState<RoutingHistory[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
+  const [notes, setNotes] = useState<LeadNote[]>([])
+  const [tasks, setTasks] = useState<LeadTask[]>([])
+  const [opsLoading, setOpsLoading] = useState(false)
+  const [opsError, setOpsError] = useState<string | null>(null)
+  const [noteDraft, setNoteDraft] = useState('')
+  const [savingNote, setSavingNote] = useState(false)
+  const [taskTitle, setTaskTitle] = useState('')
+  const [taskDueAt, setTaskDueAt] = useState('')
+  const [taskPriority, setTaskPriority] = useState<'low' | 'medium' | 'high'>('medium')
+  const [savingTask, setSavingTask] = useState(false)
 
   useEffect(() => {
     setCurrentLead(lead)
@@ -75,6 +95,7 @@ export default function LeadProfileDrawer({ lead, onClose, onUpdated }: Props) {
 
   useEffect(() => {
     void loadRoutingHistory(lead.id)
+    void loadLeadOps(lead.id)
   }, [lead.id])
 
   useEffect(() => {
@@ -108,6 +129,123 @@ export default function LeadProfileDrawer({ lead, onClose, onUpdated }: Props) {
     setHistoryLoading(false)
   }
 
+  async function loadLeadOps(leadId: number) {
+    if (!supabase) return
+    setOpsLoading(true)
+    setOpsError(null)
+
+    const [notesResult, tasksResult] = await Promise.all([
+      supabase
+        .from('lead_notes')
+        .select('*')
+        .eq('lead_id', leadId)
+        .order('created_at', { ascending: false })
+        .limit(20),
+      supabase
+        .from('lead_tasks')
+        .select('*')
+        .eq('lead_id', leadId)
+        .order('created_at', { ascending: false })
+        .limit(30),
+    ])
+
+    if (notesResult.error || tasksResult.error) {
+      setOpsError(notesResult.error?.message || tasksResult.error?.message || 'Could not load lead operations.')
+    } else {
+      setNotes((notesResult.data || []) as LeadNote[])
+      const rows = (tasksResult.data || []) as LeadTask[]
+      setTasks([...rows].sort((a, b) => {
+        const aDone = a.status === 'done' ? 1 : 0
+        const bDone = b.status === 'done' ? 1 : 0
+        if (aDone !== bDone) return aDone - bDone
+        const aDue = a.due_at ? new Date(a.due_at).getTime() : Number.MAX_SAFE_INTEGER
+        const bDue = b.due_at ? new Date(b.due_at).getTime() : Number.MAX_SAFE_INTEGER
+        return aDue - bDue
+      }))
+    }
+
+    setOpsLoading(false)
+  }
+
+  async function addNote(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const body = noteDraft.trim()
+    if (!supabase || !body) return
+    if (!currentLead.workspace_id) {
+      setOpsError('This lead is not assigned to a workspace yet.')
+      return
+    }
+
+    setSavingNote(true)
+    setOpsError(null)
+    const { error: insertError } = await supabase.from('lead_notes').insert({
+      workspace_id: currentLead.workspace_id,
+      lead_id: currentLead.id,
+      body,
+    })
+
+    if (insertError) {
+      setOpsError(insertError.message)
+    } else {
+      setNoteDraft('')
+      await loadLeadOps(currentLead.id)
+    }
+    setSavingNote(false)
+  }
+
+  async function addTask(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const title = taskTitle.trim()
+    if (!supabase || !title) return
+    if (!currentLead.workspace_id) {
+      setOpsError('This lead is not assigned to a workspace yet.')
+      return
+    }
+
+    setSavingTask(true)
+    setOpsError(null)
+
+    const dueAt = taskDueAt ? new Date(taskDueAt) : null
+    const { error: insertError } = await supabase.from('lead_tasks').insert({
+      workspace_id: currentLead.workspace_id,
+      lead_id: currentLead.id,
+      title,
+      priority: taskPriority,
+      due_at: dueAt && Number.isFinite(dueAt.getTime()) ? dueAt.toISOString() : null,
+    })
+
+    if (insertError) {
+      setOpsError(insertError.message)
+    } else {
+      setTaskTitle('')
+      setTaskDueAt('')
+      setTaskPriority('medium')
+      await loadLeadOps(currentLead.id)
+    }
+    setSavingTask(false)
+  }
+
+  async function toggleTask(task: LeadTask) {
+    if (!supabase) return
+    setOpsError(null)
+    const done = task.status !== 'done'
+    const now = new Date().toISOString()
+    const { error: updateError } = await supabase
+      .from('lead_tasks')
+      .update({
+        status: done ? 'done' : 'open',
+        completed_at: done ? now : null,
+        updated_at: now,
+      })
+      .eq('id', task.id)
+
+    if (updateError) {
+      setOpsError(updateError.message)
+    } else {
+      await loadLeadOps(currentLead.id)
+    }
+  }
+
   async function refreshRecord() {
     if (!supabase) return
     setRefreshing(true)
@@ -125,7 +263,7 @@ export default function LeadProfileDrawer({ lead, onClose, onUpdated }: Props) {
       setCurrentLead(fresh)
       setEditForm(toEditForm(fresh))
       onUpdated(fresh)
-      await loadRoutingHistory(fresh.id)
+      await Promise.all([loadRoutingHistory(fresh.id), loadLeadOps(fresh.id)])
       setMessage('Record refreshed')
     }
     setRefreshing(false)
@@ -137,6 +275,7 @@ export default function LeadProfileDrawer({ lead, onClose, onUpdated }: Props) {
       event: 'routing_status_changed',
       event_id: eventId,
       lead_id: updatedLead.id,
+      lead_public_id: updatedLead.public_id,
       previous_status: previousStatus,
       routing_status: updatedLead.routing_status,
       changed_at: updatedLead.status_changed_at,
@@ -209,7 +348,7 @@ export default function LeadProfileDrawer({ lead, onClose, onUpdated }: Props) {
       name: editForm.name.trim() || null,
       email: editForm.email.trim() || null,
       budget: editForm.budget.trim() || null,
-      currency_code: editForm.currency_code.trim().toUpperCase() || 'USD',
+      currency_code: currentLead.currency_code || 'USD',
       routing_status: nextStatus,
       ...(routingChanged ? { status_changed_at: changedAt } : {}),
     }
@@ -304,6 +443,7 @@ export default function LeadProfileDrawer({ lead, onClose, onUpdated }: Props) {
               <span className="mini-label">LEAD PROFILE</span>
               <h2>{currentLead.name || 'Unnamed lead'}</h2>
               <p>{currentLead.email || 'No email address'}</p>
+              <span className="lead-public-id">{currentLead.public_id}</span>
             </div>
           </div>
           <button className="lead-drawer-close" type="button" onClick={onClose} aria-label="Close lead details">×</button>
@@ -339,10 +479,11 @@ export default function LeadProfileDrawer({ lead, onClose, onUpdated }: Props) {
             {message && <div className="lead-save-success" role="status">✓ {message}</div>}
             {warning && <div className="lead-save-warning" role="alert">⚠ {warning}</div>}
             {error && <div className="lead-save-error" role="alert">{error}</div>}
+            {opsError && <div className="lead-save-error" role="alert">{opsError}</div>}
 
             <div className="lead-detail-grid">
-              <LeadDetail label="Budget" value={currentLead.budget ? `${formatLeadBudget(currentLead.budget, currentLead.currency_code)} ${currentLead.currency_code}` : 'Not provided'} />
-              <LeadDetail label="Lead ID" value={`#${currentLead.id}`} />
+              <LeadDetail label="Budget" value={currentLead.budget ? formatLeadBudget(currentLead.budget, currentLead.currency_code) : 'Not provided'} />
+              <LeadDetail label="Public ID" value={currentLead.public_id} />
               <LeadDetail label="Added" value={new Date(currentLead.created_at).toLocaleString('en-US', { month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })} />
               <LeadDetail label="Source" value={currentLead.source || 'Unknown'} />
             </div>
@@ -361,6 +502,72 @@ export default function LeadProfileDrawer({ lead, onClose, onUpdated }: Props) {
               <p className="lead-message">{currentLead.message || 'No original message was saved.'}</p>
             </section>
 
+            <div className="lead-ops-grid">
+              <section className="lead-drawer-section lead-ops-card">
+                <div className="lead-ops-heading">
+                  <div><span className="mini-label">INTERNAL CONTEXT</span><h3>Notes</h3></div>
+                  <span className="lead-ops-count">{notes.length}</span>
+                </div>
+                <form className="lead-note-form" onSubmit={addNote}>
+                  <textarea value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} placeholder="Add a private note about this lead…" maxLength={5000} />
+                  <button className="button secondary lead-ops-submit" type="submit" disabled={savingNote || !noteDraft.trim()}>{savingNote ? 'Adding…' : 'Add note'}</button>
+                </form>
+                {opsLoading ? (
+                  <p className="lead-ops-empty">Loading notes…</p>
+                ) : notes.length ? (
+                  <div className="lead-notes-list">
+                    {notes.map((note) => (
+                      <article className="lead-note-item" key={note.id}>
+                        <p>{note.body}</p>
+                        <div className="lead-note-meta"><span>{note.public_id}</span><time>{formatActivityDate(note.created_at)}</time></div>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="lead-ops-empty">No internal notes yet.</p>
+                )}
+              </section>
+
+              <section className="lead-drawer-section lead-ops-card">
+                <div className="lead-ops-heading">
+                  <div><span className="mini-label">FOLLOW-UP</span><h3>Tasks</h3></div>
+                  <span className="lead-ops-count">{tasks.filter((task) => task.status === 'open').length}</span>
+                </div>
+                <form className="lead-task-form" onSubmit={addTask}>
+                  <input value={taskTitle} onChange={(event) => setTaskTitle(event.target.value)} placeholder="e.g. Call about proposal" maxLength={240} />
+                  <div className="lead-task-form-row">
+                    <input type="datetime-local" value={taskDueAt} onChange={(event) => setTaskDueAt(event.target.value)} aria-label="Task due date" />
+                    <select value={taskPriority} onChange={(event) => setTaskPriority(event.target.value as 'low' | 'medium' | 'high')} aria-label="Task priority">
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                    </select>
+                  </div>
+                  <button className="button secondary lead-ops-submit" type="submit" disabled={savingTask || !taskTitle.trim()}>{savingTask ? 'Creating…' : 'Create task'}</button>
+                </form>
+                {opsLoading ? (
+                  <p className="lead-ops-empty">Loading tasks…</p>
+                ) : tasks.length ? (
+                  <div className="lead-tasks-list">
+                    {tasks.map((task) => (
+                      <article className={`lead-task-item ${task.status === 'done' ? 'done' : ''}`} key={task.id}>
+                        <button className={`lead-task-toggle ${task.status === 'done' ? 'done' : ''}`} type="button" onClick={() => void toggleTask(task)} aria-label={task.status === 'done' ? 'Reopen task' : 'Complete task'}>{task.status === 'done' ? '✓' : ''}</button>
+                        <div className="lead-task-copy">
+                          <strong>{task.title}</strong>
+                          <div className="lead-task-meta">
+                            <span className={`lead-task-priority ${task.priority}`}>{task.priority}</span>
+                            <time>{task.due_at ? `Due ${formatActivityDate(task.due_at)}` : 'No due date'}</time>
+                          </div>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="lead-ops-empty">No follow-up tasks yet.</p>
+                )}
+              </section>
+            </div>
+
             <section className="lead-drawer-section routing-history-section">
               <div className="routing-history-heading">
                 <div><span className="mini-label">ROUTING AUDIT</span><h3>Status history</h3></div>
@@ -377,7 +584,7 @@ export default function LeadProfileDrawer({ lead, onClose, onUpdated }: Props) {
                         <strong>{item.from_status || 'Unclassified'} → {item.to_status}</strong>
                         <span>{routingResultLabel(item)}</span>
                       </div>
-                      <time>{new Date(item.changed_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</time>
+                      <time>{formatActivityDate(item.changed_at)}</time>
                     </div>
                   ))}
                 </div>
@@ -397,14 +604,8 @@ export default function LeadProfileDrawer({ lead, onClose, onUpdated }: Props) {
             <div className="lead-edit-grid">
               <label><span>Name</span><input value={editForm.name} onChange={(event) => setEditForm({ ...editForm, name: event.target.value })} /></label>
               <label><span>Email</span><input type="email" value={editForm.email} onChange={(event) => setEditForm({ ...editForm, email: event.target.value })} /></label>
-              <label><span>Budget</span><input value={editForm.budget} onChange={(event) => setEditForm({ ...editForm, budget: event.target.value })} /></label>
-              <label>
-                <span>Currency</span>
-                <select value={editForm.currency_code} onChange={(event) => setEditForm({ ...editForm, currency_code: event.target.value })}>
-                  <option value="USD">USD · US Dollar</option>
-                  <option value="PHP">PHP · Philippine Peso</option>
-                </select>
-              </label>
+              <label><span>Budget · USD workspace standard</span><input value={editForm.budget} onChange={(event) => setEditForm({ ...editForm, budget: event.target.value })} /></label>
+              <label><span>Currency</span><input value={currentLead.currency_code || 'USD'} disabled /></label>
               <label>
                 <span>Routing status</span>
                 <select value={editForm.routing_status} onChange={(event) => setEditForm({ ...editForm, routing_status: event.target.value })}>
