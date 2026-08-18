@@ -11,6 +11,9 @@ type SortOrder = 'newest' | 'oldest'
 type Props = {
   onLoaded?: (leads: Lead[]) => void
   onAddLead?: () => void
+  selectedPublicId?: string | null
+  onOpenLead?: (lead: Lead) => void
+  onCloseLead?: () => void
 }
 
 const NEW_LEAD_WINDOW_MS = 30 * 60 * 1000
@@ -50,7 +53,7 @@ function freshnessLabel(lead: Lead) {
   return `${minutes}m ago`
 }
 
-export default function LeadsPage({ onLoaded, onAddLead }: Props) {
+export default function LeadsPage({ onLoaded, onAddLead, selectedPublicId, onOpenLead, onCloseLead }: Props) {
   const [leads, setLeads] = useState<Lead[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -87,7 +90,6 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
       setLeads(rows)
       setLastUpdated(new Date())
       onLoaded?.(rows)
-      setSelectedLead((current) => current ? rows.find((lead) => lead.id === current.id) || null : null)
     }
 
     setLoading(false)
@@ -96,6 +98,16 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
 
   useEffect(() => { void loadLeads() }, [loadLeads])
 
+  useEffect(() => {
+    if (!selectedPublicId) {
+      setSelectedLead(null)
+      return
+    }
+
+    const match = leads.find((lead) => lead.public_id === selectedPublicId || String(lead.id) === selectedPublicId) || null
+    setSelectedLead(match)
+  }, [leads, selectedPublicId])
+
   const filtered = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase()
     return leads
@@ -103,7 +115,7 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
         const routing = statusValue(lead).toLowerCase()
         if (category !== 'all' && routing !== category) return false
         if (!normalizedQuery) return true
-        return [lead.name, lead.email, lead.intent, lead.category, lead.routing_status, lead.source, lead.summary, lead.message, lead.currency_code]
+        return [lead.public_id, lead.name, lead.email, lead.intent, lead.category, lead.routing_status, lead.source, lead.summary, lead.message]
           .filter(Boolean)
           .some((value) => String(value).toLowerCase().includes(normalizedQuery))
       })
@@ -120,6 +132,16 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
     warm: leads.filter((lead) => statusValue(lead).toLowerCase() === 'warm').length,
     cold: leads.filter((lead) => statusValue(lead).toLowerCase() === 'cold').length,
   }), [leads])
+
+  function openLead(lead: Lead) {
+    setSelectedLead(lead)
+    onOpenLead?.(lead)
+  }
+
+  function closeLead() {
+    setSelectedLead(null)
+    onCloseLead?.()
+  }
 
   function handleLeadUpdated(updatedLead: Lead) {
     const nextRows = leads.map((lead) => lead.id === updatedLead.id ? updatedLead : lead)
@@ -146,7 +168,7 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
     } else {
       const nextRows = leads.filter((item) => item.id !== lead.id)
       setLeads(nextRows)
-      setSelectedLead((current) => current?.id === lead.id ? null : current)
+      if (selectedLead?.id === lead.id) closeLead()
       setLastUpdated(new Date())
       onLoaded?.(nextRows)
     }
@@ -179,7 +201,7 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
         <div className="leads-toolbar">
           <div className="leads-search">
             <span>⌕</span>
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name, email, intent, source or AI summary..." aria-label="Search leads" />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search ID, name, email, intent, source or AI summary..." aria-label="Search leads" />
           </div>
           <div className="leads-toolbar-actions">
             <label className="leads-sort-control">
@@ -202,11 +224,11 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
                 const routing = statusValue(lead)
                 const newLead = isNewLead(lead)
                 return (
-                  <tr key={lead.id} className={`lead-table-row ${newLead ? 'is-new-lead' : ''}`} tabIndex={0} onClick={() => setSelectedLead(lead)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedLead(lead) } }} aria-label={`Open ${lead.name || 'lead'} details`}>
-                    <td><div className="lead-cell"><span className="avatar">{initials(lead.name)}</span><div><div className="lead-name-line"><strong>{lead.name || 'Unnamed lead'}</strong>{newLead && <span className="new-lead-badge"><i />New</span>}</div><span>{lead.email || 'No email'}</span></div></div></td>
+                  <tr key={lead.id} className={`lead-table-row ${newLead ? 'is-new-lead' : ''}`} tabIndex={0} onClick={() => openLead(lead)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openLead(lead) } }} aria-label={`Open ${lead.name || 'lead'} details`}>
+                    <td><div className="lead-cell"><span className="avatar">{initials(lead.name)}</span><div><div className="lead-name-line"><strong>{lead.name || 'Unnamed lead'}</strong>{newLead && <span className="new-lead-badge"><i />New</span>}</div><span>{lead.email || 'No email'} · {lead.public_id}</span></div></div></td>
                     <td>{lead.intent || '—'}</td>
                     <td><span className={`category-pill ${categoryClass(routing)}`}><i />{routing}</span></td>
-                    <td><span title={lead.currency_code}>{formatLeadBudget(lead.budget, lead.currency_code)}</span></td>
+                    <td>{formatLeadBudget(lead.budget, 'USD')}</td>
                     <td>{lead.source || '—'}</td>
                     <td className="summary-cell" title={lead.summary || lead.message || ''}>{lead.summary || lead.message || '—'}</td>
                     <td><div className="lead-added-cell"><span>{new Date(lead.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>{newLead && <small>{freshnessLabel(lead)}</small>}</div></td>
@@ -221,7 +243,7 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
         </div>
       </section>
 
-      {selectedLead && <LeadProfileDrawer lead={selectedLead} onClose={() => setSelectedLead(null)} onUpdated={handleLeadUpdated} />}
+      {selectedLead && <LeadProfileDrawer lead={selectedLead} onClose={closeLead} onUpdated={handleLeadUpdated} />}
     </>
   )
 }
