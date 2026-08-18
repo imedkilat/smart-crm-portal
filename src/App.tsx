@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from './lib/supabase'
+import { budgetTotalsByCurrency, formatCurrencyTotals, formatLeadBudget, formatMoney, parseBudget } from './lib/currency'
 import type { Database } from './types/database'
 import GlobalSearch from './components/GlobalSearch'
 import LeadProfileDrawer from './components/LeadProfileDrawer'
@@ -16,6 +17,13 @@ import './leads-new.css'
 type Lead = Database['public']['Tables']['leads']['Row']
 type WeeklySummary = Database['public']['Tables']['weekly_summary']['Row']
 type Page = 'dashboard' | 'leads' | 'add' | 'automation' | 'analytics' | 'reports' | 'settings'
+type Metrics = {
+  total: number
+  hot: number
+  warm: number
+  cold: number
+  pipelineByCurrency: Map<string, number>
+}
 
 type NavItem = {
   id: Page
@@ -42,20 +50,6 @@ const workflow = [
   ['04', 'Follow-up', 'Automated outreach based on routing priority'],
   ['05', 'Intelligence', 'Weekly trends, insights and reports'],
 ]
-
-function parseBudget(value: string | null) {
-  if (!value) return 0
-  const parsed = Number(value.replace(/[^0-9.]/g, ''))
-  return Number.isFinite(parsed) ? parsed : 0
-}
-
-function money(value: number) {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: 0,
-  }).format(value)
-}
 
 function initials(name: string | null) {
   if (!name) return '—'
@@ -178,14 +172,14 @@ export default function App() {
     })
   }, [])
 
-  const metrics = useMemo(() => {
+  const metrics = useMemo<Metrics>(() => {
     const total = leads.length
     const hot = leads.filter((lead) => statusValue(lead).toLowerCase() === 'hot').length
     const warm = leads.filter((lead) => statusValue(lead).toLowerCase() === 'warm').length
     const cold = leads.filter((lead) => statusValue(lead).toLowerCase() === 'cold').length
-    const pipeline = leads.reduce((sum, lead) => sum + parseBudget(lead.budget), 0)
+    const pipelineByCurrency = budgetTotalsByCurrency(leads)
 
-    return { total, hot, warm, cold, pipeline }
+    return { total, hot, warm, cold, pipelineByCurrency }
   }, [leads])
 
   const distribution = [
@@ -306,7 +300,7 @@ function DashboardPage({
 }: {
   loading: boolean
   error: string | null
-  metrics: { total: number; hot: number; warm: number; cold: number; pipeline: number }
+  metrics: Metrics
   distribution: { label: string; count: number; className: string }[]
   weeklySummary: WeeklySummary | null
   recentLeads: Lead[]
@@ -345,7 +339,7 @@ function DashboardPage({
         <MetricCard label="Hot" value={loading ? '—' : String(metrics.hot)} tone="red" note="Hot routing priority" />
         <MetricCard label="Warm" value={loading ? '—' : String(metrics.warm)} tone="amber" note="Warm routing priority" />
         <MetricCard label="Cold" value={loading ? '—' : String(metrics.cold)} tone="cyan" note="Cold routing priority" />
-        <MetricCard label="Pipeline value" value={loading ? '—' : money(metrics.pipeline)} tone="violet" note="From active lead budgets" wide />
+        <MetricCard label="Pipeline value" value={loading ? '—' : formatCurrencyTotals(metrics.pipelineByCurrency)} tone="violet" note="Tracked separately by currency" wide />
       </section>
 
       <section className="automation-card">
@@ -473,7 +467,7 @@ function DashboardPage({
                     </td>
                     <td>{lead.intent || '—'}</td>
                     <td><span className={`category-pill ${categoryClass(routing)}`}><i />{routing}</span></td>
-                    <td>{lead.budget ? money(parseBudget(lead.budget)) : '—'}</td>
+                    <td>{formatLeadBudget(lead.budget, lead.currency_code)}</td>
                     <td>{lead.source || '—'}</td>
                     <td>
                       <div className="lead-added-cell">
@@ -502,7 +496,7 @@ function AnalyticsPage({
   loading,
 }: {
   leads: Lead[]
-  metrics: { total: number; hot: number; warm: number; cold: number; pipeline: number }
+  metrics: Metrics
   weeklySummary: WeeklySummary | null
   loading: boolean
 }) {
@@ -550,23 +544,28 @@ function AnalyticsPage({
   const budgetStats = useMemo(() => {
     return ['hot', 'warm', 'cold'].map((category) => {
       const categoryLeads = leads.filter((lead) => statusValue(lead).toLowerCase() === category)
-      const values = categoryLeads.map((lead) => parseBudget(lead.budget)).filter((value) => value > 0)
-      const total = values.reduce((sum, value) => sum + value, 0)
+      const totals = budgetTotalsByCurrency(categoryLeads)
+      const budgetCount = categoryLeads.filter((lead) => parseBudget(lead.budget) > 0).length
       return {
         label: category[0].toUpperCase() + category.slice(1),
         className: category,
-        total,
-        average: values.length ? total / values.length : 0,
+        totals,
+        budgetCount,
       }
     })
   }, [leads])
 
-  const avgBudget = metrics.total ? metrics.pipeline / metrics.total : 0
+  const singleCurrencyCode = metrics.pipelineByCurrency.size === 1 ? [...metrics.pipelineByCurrency.keys()][0] : null
+  const singleCurrencyPipeline = singleCurrencyCode ? metrics.pipelineByCurrency.get(singleCurrencyCode) || 0 : 0
+  const budgetLeadCount = leads.filter((lead) => parseBudget(lead.budget) > 0).length
+  const avgBudget = singleCurrencyCode && budgetLeadCount ? singleCurrencyPipeline / budgetLeadCount : 0
   const hotShare = percent(metrics.hot, metrics.total)
   const maxTrend = Math.max(...trend.map((item) => item.count), 1)
   const maxSource = Math.max(...sourceStats.map((item) => item.count), 1)
   const maxIntent = Math.max(...intentStats.map((item) => item.count), 1)
-  const maxBudget = Math.max(...budgetStats.map((item) => item.total), 1)
+  const maxBudget = singleCurrencyCode
+    ? Math.max(...budgetStats.map((item) => item.totals.get(singleCurrencyCode) || 0), 1)
+    : 1
   const dominantSource = sourceStats[0]
   const dominantIntent = intentStats[0]
 
@@ -583,7 +582,12 @@ function AnalyticsPage({
 
       <section className="analytics-kpis">
         <AnalyticsMetric label="Hot routing share" value={loading ? '—' : `${hotShare}%`} note={`${metrics.hot} of ${metrics.total} leads`} accent="red" />
-        <AnalyticsMetric label="Average lead budget" value={loading ? '—' : money(avgBudget)} note="Across active records" accent="violet" />
+        <AnalyticsMetric
+          label="Average lead budget"
+          value={loading ? '—' : singleCurrencyCode ? formatMoney(avgBudget, singleCurrencyCode) : 'Mixed currencies'}
+          note={singleCurrencyCode ? `Across ${budgetLeadCount} budgeted leads` : 'Currency totals are kept separate'}
+          accent="violet"
+        />
         <AnalyticsMetric label="Top source" value={loading ? '—' : dominantSource?.label || '—'} note={dominantSource ? `${dominantSource.count} leads captured` : 'No source data'} accent="blue" />
         <AnalyticsMetric label="Primary intent" value={loading ? '—' : dominantIntent?.label || '—'} note={dominantIntent ? `${percent(dominantIntent.count, metrics.total)}% of pipeline` : 'No intent data'} accent="amber" />
       </section>
@@ -662,18 +666,24 @@ function AnalyticsPage({
 
       <section className="analytics-grid analytics-grid-bottom">
         <article className="panel analytics-panel budget-panel">
-          <AnalyticsPanelHeader kicker="PIPELINE VALUE" title="Budget by routing status" detail={money(metrics.pipeline)} />
+          <AnalyticsPanelHeader kicker="PIPELINE VALUE" title="Budget by routing status" detail={formatCurrencyTotals(metrics.pipelineByCurrency)} />
           <div className="budget-bars">
-            {budgetStats.map((item) => (
-              <div className="budget-row" key={item.label}>
-                <div className="budget-copy">
-                  <span><i className={item.className} />{item.label}</span>
-                  <strong>{money(item.total)}</strong>
-                  <small>Avg {money(item.average)}</small>
+            {budgetStats.map((item) => {
+              const singleTotal = singleCurrencyCode ? item.totals.get(singleCurrencyCode) || 0 : 0
+              const average = singleCurrencyCode && item.budgetCount ? singleTotal / item.budgetCount : 0
+              return (
+                <div className="budget-row" key={item.label}>
+                  <div className="budget-copy">
+                    <span><i className={item.className} />{item.label}</span>
+                    <strong>{formatCurrencyTotals(item.totals)}</strong>
+                    <small>{singleCurrencyCode ? `Avg ${formatMoney(average, singleCurrencyCode)}` : 'Currency-safe totals'}</small>
+                  </div>
+                  {singleCurrencyCode && (
+                    <div className="budget-track"><span className={item.className} style={{ width: `${(singleTotal / maxBudget) * 100}%` }} /></div>
+                  )}
                 </div>
-                <div className="budget-track"><span className={item.className} style={{ width: `${(item.total / maxBudget) * 100}%` }} /></div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </article>
 
