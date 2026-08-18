@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from './lib/supabase'
 import { budgetTotalsByCurrency, formatCurrencyTotals, formatLeadBudget, formatMoney, parseBudget } from './lib/currency'
+import { useAppRoute, type AppPage } from './lib/appRoutes'
 import type { Database } from './types/database'
 import GlobalSearch from './components/GlobalSearch'
-import LeadProfileDrawer from './components/LeadProfileDrawer'
 import LeadsPage from './pages/LeadsPage'
 import AddLeadPage from './pages/AddLeadPage'
 import ReportsPage from './pages/ReportsPage'
@@ -16,7 +16,7 @@ import './leads-new.css'
 
 type Lead = Database['public']['Tables']['leads']['Row']
 type WeeklySummary = Database['public']['Tables']['weekly_summary']['Row']
-type Page = 'dashboard' | 'leads' | 'add' | 'automation' | 'analytics' | 'reports' | 'settings'
+type Page = AppPage
 type Metrics = {
   total: number
   hot: number
@@ -100,12 +100,25 @@ function freshnessLabel(lead: Lead, now = Date.now()) {
 }
 
 export default function App() {
-  const [page, setPage] = useState<Page>('dashboard')
+  const { route, navigate, navigateLead } = useAppRoute()
+  const page = route.page
   const [leads, setLeads] = useState<Lead[]>([])
   const [weeklySummary, setWeeklySummary] = useState<WeeklySummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [selectedDashboardLead, setSelectedDashboardLead] = useState<Lead | null>(null)
+
+  useEffect(() => {
+    const titles: Record<Page, string> = {
+      dashboard: 'Dashboard',
+      leads: route.leadPublicId ? 'Lead Profile' : 'Leads',
+      add: 'Add Lead',
+      automation: 'Automation',
+      analytics: 'Analytics',
+      reports: 'Reports',
+      settings: 'Settings',
+    }
+    document.title = `${titles[page]} · Smart CRM`
+  }, [page, route.leadPublicId])
 
   useEffect(() => {
     if (page !== 'dashboard' && page !== 'analytics') return
@@ -165,11 +178,6 @@ export default function App() {
 
       return sortNewest(next)
     })
-
-    setSelectedDashboardLead((current) => {
-      if (current?.id !== updatedLead.id) return current
-      return updatedLead.archived_at ? null : updatedLead
-    })
   }, [])
 
   const metrics = useMemo<Metrics>(() => {
@@ -190,6 +198,10 @@ export default function App() {
 
   const recentLeads = leads.slice(0, 6)
 
+  function openLead(lead: Lead) {
+    navigateLead(lead.public_id || lead.id)
+  }
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -206,7 +218,7 @@ export default function App() {
             <button
               key={item.id}
               className={`nav-item ${page === item.id ? 'active' : ''}`}
-              onClick={() => setPage(item.id)}
+              onClick={() => navigate(item.id)}
               type="button"
             >
               <span className="nav-icon">{item.icon}</span>
@@ -221,7 +233,7 @@ export default function App() {
             <span className="live-dot" />
             <span>Supabase connected</span>
           </div>
-          <p>v2 rebuild · live data</p>
+          <p>commercial foundation · live data</p>
         </div>
       </aside>
 
@@ -247,17 +259,23 @@ export default function App() {
               distribution={distribution}
               weeklySummary={weeklySummary}
               recentLeads={recentLeads}
-              setPage={setPage}
-              onOpenLead={setSelectedDashboardLead}
+              setPage={navigate}
+              onOpenLead={openLead}
             />
           )}
 
           {page === 'leads' && (
-            <LeadsPage onLoaded={handleLeadsLoaded} onAddLead={() => setPage('add')} />
+            <LeadsPage
+              onLoaded={handleLeadsLoaded}
+              onAddLead={() => navigate('add')}
+              selectedPublicId={route.leadPublicId}
+              onOpenLead={openLead}
+              onCloseLead={() => navigate('leads')}
+            />
           )}
 
           {page === 'add' && (
-            <AddLeadPage onCreated={() => setPage('leads')} />
+            <AddLeadPage onCreated={() => navigate('leads')} />
           )}
 
           {page === 'automation' && <AutomationPage onLeadUpdated={handleLeadUpdated} />}
@@ -270,20 +288,12 @@ export default function App() {
 
           {page === 'settings' && (
             <SettingsPage
-              onOpenRunLog={() => setPage('automation')}
+              onOpenRunLog={() => navigate('automation')}
               onLeadRestored={handleLeadUpdated}
             />
           )}
         </main>
       </div>
-
-      {selectedDashboardLead && (
-        <LeadProfileDrawer
-          lead={selectedDashboardLead}
-          onClose={() => setSelectedDashboardLead(null)}
-          onUpdated={handleLeadUpdated}
-        />
-      )}
     </div>
   )
 }
@@ -318,7 +328,7 @@ function DashboardPage({
     <>
       <section className="page-heading">
         <div>
-          <div className="eyebrow">SMART CRM PORTAL · V2</div>
+          <div className="eyebrow">SMART CRM · COMMERCIAL BUILD</div>
           <h1>Good morning, Ed</h1>
           <p>Here&apos;s what&apos;s happening with your lead pipeline.</p>
         </div>
@@ -461,7 +471,7 @@ function DashboardPage({
                             <strong>{lead.name || 'Unnamed lead'}</strong>
                             {newLead && <span className="new-lead-badge"><i />New</span>}
                           </div>
-                          <span>{lead.email || 'No email'}</span>
+                          <span>{lead.email || 'No email'} · {lead.public_id}</span>
                         </div>
                       </div>
                     </td>
