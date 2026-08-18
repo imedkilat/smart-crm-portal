@@ -13,6 +13,14 @@ function responseMessage(body: string, fallback: string) {
   }
 }
 
+function idempotencyKey(functionName: 'crm-lead-intake' | 'crm-status-route', body: Record<string, unknown> | FormData) {
+  if (functionName === 'crm-status-route' && !(body instanceof FormData)) {
+    const eventId = body.event_id
+    if (typeof eventId === 'string' && eventId.trim()) return eventId.trim()
+  }
+  return `${functionName}:${crypto.randomUUID()}`
+}
+
 export async function invokeSecureAutomation(
   functionName: 'crm-lead-intake' | 'crm-status-route',
   body: Record<string, unknown> | FormData,
@@ -34,6 +42,7 @@ export async function invokeSecureAutomation(
   const headers: Record<string, string> = {
     Authorization: `Bearer ${session.access_token}`,
     apikey: supabasePublishableKey,
+    'X-Idempotency-Key': idempotencyKey(functionName, body),
   }
 
   if (!isForm) headers['Content-Type'] = 'application/json'
@@ -46,7 +55,9 @@ export async function invokeSecureAutomation(
 
   const text = await response.text()
   if (!response.ok) {
-    throw new Error(responseMessage(text, `Automation gateway returned ${response.status}.`))
+    const retryAfter = response.headers.get('Retry-After')
+    const suffix = response.status === 429 && retryAfter ? ` Try again in ${retryAfter}s.` : ''
+    throw new Error(`${responseMessage(text, `Automation gateway returned ${response.status}.`)}${suffix}`)
   }
 
   return text
