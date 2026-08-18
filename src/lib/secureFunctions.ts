@@ -3,6 +3,13 @@ import { supabase } from './supabase'
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined
 const supabasePublishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined
 
+type SecureFunctionName = 'crm-lead-intake' | 'crm-status-route' | 'crm-ai-copilot'
+
+type InvokeOptions = {
+  workspaceId?: string | null
+  idempotencyKey?: string
+}
+
 function responseMessage(body: string, fallback: string) {
   if (!body) return fallback
   try {
@@ -13,17 +20,26 @@ function responseMessage(body: string, fallback: string) {
   }
 }
 
-function idempotencyKey(functionName: 'crm-lead-intake' | 'crm-status-route', body: Record<string, unknown> | FormData) {
-  if (functionName === 'crm-status-route' && !(body instanceof FormData)) {
-    const eventId = body.event_id
-    if (typeof eventId === 'string' && eventId.trim()) return eventId.trim()
+function automaticIdempotencyKey(functionName: SecureFunctionName, body: Record<string, unknown> | FormData) {
+  if (!(body instanceof FormData)) {
+    if (functionName === 'crm-status-route') {
+      const eventId = body.event_id
+      if (typeof eventId === 'string' && eventId.trim()) return eventId.trim()
+    }
+
+    if (functionName === 'crm-ai-copilot') {
+      const requestId = body.request_id
+      if (typeof requestId === 'string' && requestId.trim()) return requestId.trim()
+    }
   }
+
   return `${functionName}:${crypto.randomUUID()}`
 }
 
 export async function invokeSecureAutomation(
-  functionName: 'crm-lead-intake' | 'crm-status-route',
+  functionName: SecureFunctionName,
   body: Record<string, unknown> | FormData,
+  options: InvokeOptions = {},
 ) {
   if (!supabase || !supabaseUrl || !supabasePublishableKey) {
     throw new Error('Secure automation gateway is not configured.')
@@ -42,9 +58,10 @@ export async function invokeSecureAutomation(
   const headers: Record<string, string> = {
     Authorization: `Bearer ${session.access_token}`,
     apikey: supabasePublishableKey,
-    'X-Idempotency-Key': idempotencyKey(functionName, body),
+    'X-Idempotency-Key': options.idempotencyKey || automaticIdempotencyKey(functionName, body),
   }
 
+  if (options.workspaceId) headers['X-Workspace-Id'] = options.workspaceId
   if (!isForm) headers['Content-Type'] = 'application/json'
 
   const response = await fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
