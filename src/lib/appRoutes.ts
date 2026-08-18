@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 
-export type AppPage = 'dashboard' | 'pipeline' | 'leads' | 'add' | 'automation' | 'analytics' | 'reports' | 'settings'
+export type AppPage = 'dashboard' | 'pipeline' | 'tasks' | 'leads' | 'add' | 'automation' | 'analytics' | 'reports' | 'settings'
 
 export type AppRoute = {
   page: AppPage
@@ -10,6 +10,7 @@ export type AppRoute = {
 export const PAGE_PATHS: Record<AppPage, string> = {
   dashboard: '/dashboard',
   pipeline: '/pipeline',
+  tasks: '/tasks',
   leads: '/leads',
   add: '/leads/new',
   automation: '/automation',
@@ -28,6 +29,7 @@ export function parseAppRoute(pathname = window.location.pathname): AppRoute {
 
   if (path === '/' || path === '/dashboard') return { page: 'dashboard', leadPublicId: null }
   if (path === '/pipeline') return { page: 'pipeline', leadPublicId: null }
+  if (path === '/tasks') return { page: 'tasks', leadPublicId: null }
   if (path === '/leads') return { page: 'leads', leadPublicId: null }
   if (path === '/leads/new') return { page: 'add', leadPublicId: null }
   if (path === '/automation') return { page: 'automation', leadPublicId: null }
