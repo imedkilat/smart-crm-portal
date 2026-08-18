@@ -79,6 +79,66 @@ export type Database = {
         Update: Partial<Database['public']['Tables']['workspace_members']['Insert']>
         Relationships: []
       }
+      lead_notes: {
+        Row: {
+          id: string
+          public_id: string
+          workspace_id: string
+          lead_id: number
+          body: string
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          public_id?: string
+          workspace_id: string
+          lead_id: number
+          body: string
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['lead_notes']['Insert']>
+        Relationships: []
+      }
+      lead_tasks: {
+        Row: {
+          id: string
+          public_id: string
+          workspace_id: string
+          lead_id: number
+          title: string
+          description: string | null
+          status: 'open' | 'done' | 'canceled'
+          priority: 'low' | 'medium' | 'high'
+          due_at: string | null
+          assigned_to: string | null
+          created_by: string | null
+          completed_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          public_id?: string
+          workspace_id: string
+          lead_id: number
+          title: string
+          description?: string | null
+          status?: 'open' | 'done' | 'canceled'
+          priority?: 'low' | 'medium' | 'high'
+          due_at?: string | null
+          assigned_to?: string | null
+          created_by?: string | null
+          completed_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['lead_tasks']['Insert']>
+        Relationships: []
+      }
       lead_routing_history: {
         Row: {
           id: string
