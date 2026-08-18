@@ -5,6 +5,7 @@ import { useAppRoute, type AppPage } from './lib/appRoutes'
 import type { Database } from './types/database'
 import GlobalSearch from './components/GlobalSearch'
 import LeadsPage from './pages/LeadsPage'
+import PipelinePage from './pages/PipelinePage'
 import AddLeadPage from './pages/AddLeadPage'
 import ReportsPage from './pages/ReportsPage'
 import AutomationPage from './pages/AutomationPage'
@@ -35,6 +36,7 @@ const NEW_LEAD_WINDOW_MS = 30 * 60 * 1000
 
 const navItems: NavItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: '⌂' },
+  { id: 'pipeline', label: 'Pipeline', icon: '▥' },
   { id: 'leads', label: 'Leads', icon: '◌' },
   { id: 'add', label: 'Add Lead', icon: '+' },
   { id: 'automation', label: 'Automation', icon: '⌁' },
@@ -110,6 +112,7 @@ export default function App() {
   useEffect(() => {
     const titles: Record<Page, string> = {
       dashboard: 'Dashboard',
+      pipeline: 'Sales Pipeline',
       leads: route.leadPublicId ? 'Lead Profile' : 'Leads',
       add: 'Add Lead',
       automation: 'Automation',
@@ -264,6 +267,10 @@ export default function App() {
             />
           )}
 
+          {page === 'pipeline' && (
+            <PipelinePage onOpenLead={openLead} onLeadUpdated={handleLeadUpdated} />
+          )}
+
           {page === 'leads' && (
             <LeadsPage
               onLoaded={handleLeadsLoaded}
@@ -333,8 +340,8 @@ function DashboardPage({
           <p>Here&apos;s what&apos;s happening with your lead pipeline.</p>
         </div>
         <div className="heading-actions">
-          <button className="button secondary" type="button" onClick={() => setPage('reports')}>
-            Weekly report
+          <button className="button secondary" type="button" onClick={() => setPage('pipeline')}>
+            Open pipeline
           </button>
           <button className="button primary" type="button" onClick={() => setPage('add')}>
             + Add lead
@@ -349,7 +356,7 @@ function DashboardPage({
         <MetricCard label="Hot" value={loading ? '—' : String(metrics.hot)} tone="red" note="Hot routing priority" />
         <MetricCard label="Warm" value={loading ? '—' : String(metrics.warm)} tone="amber" note="Warm routing priority" />
         <MetricCard label="Cold" value={loading ? '—' : String(metrics.cold)} tone="cyan" note="Cold routing priority" />
-        <MetricCard label="Pipeline value" value={loading ? '—' : formatCurrencyTotals(metrics.pipelineByCurrency)} tone="violet" note="Tracked separately by currency" wide />
+        <MetricCard label="Lead budget value" value={loading ? '—' : formatCurrencyTotals(metrics.pipelineByCurrency)} tone="violet" note="AI-qualified lead budgets" wide />
       </section>
 
       <section className="automation-card">
@@ -401,8 +408,8 @@ function DashboardPage({
         <article className="panel distribution-panel">
           <div className="section-heading compact">
             <div>
-              <span className="mini-label">ROUTING PRIORITY</span>
-              <h2>Pipeline mix</h2>
+              <span className="mini-label">AI LEAD QUALITY</span>
+              <h2>Lead quality mix</h2>
             </div>
             <strong className="panel-total">{metrics.total}</strong>
           </div>
