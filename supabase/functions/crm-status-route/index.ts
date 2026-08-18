@@ -31,7 +31,9 @@ Deno.serve(async (req: Request) => {
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL') || ''
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
+  const ingressToken = Deno.env.get('N8N_STATUS_INGRESS_TOKEN') || ''
   if (!supabaseUrl || !serviceRoleKey) return json(req, 500, { error: 'Server auth is not configured' })
+  if (!ingressToken) return json(req, 500, { error: 'Status automation ingress is not configured' })
 
   const admin = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -48,8 +50,7 @@ Deno.serve(async (req: Request) => {
       method: 'POST',
       headers: {
         'content-type': contentType,
-        'authorization': authHeader,
-        'x-smart-crm-ingress': 'supabase-edge',
+        'x-smart-crm-ingress-token': ingressToken,
       },
       body: await req.arrayBuffer(),
     })
