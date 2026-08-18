@@ -6,6 +6,7 @@ import type { Database } from './types/database'
 import GlobalSearch from './components/GlobalSearch'
 import LeadsPage from './pages/LeadsPage'
 import PipelinePage from './pages/PipelinePage'
+import TasksPage from './pages/TasksPage'
 import AddLeadPage from './pages/AddLeadPage'
 import ReportsPage from './pages/ReportsPage'
 import AutomationPage from './pages/AutomationPage'
@@ -37,6 +38,7 @@ const NEW_LEAD_WINDOW_MS = 30 * 60 * 1000
 const navItems: NavItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: '⌂' },
   { id: 'pipeline', label: 'Pipeline', icon: '▥' },
+  { id: 'tasks', label: 'Tasks', icon: '✓' },
   { id: 'leads', label: 'Leads', icon: '◌' },
   { id: 'add', label: 'Add Lead', icon: '+' },
   { id: 'automation', label: 'Automation', icon: '⌁' },
@@ -113,6 +115,7 @@ export default function App() {
     const titles: Record<Page, string> = {
       dashboard: 'Dashboard',
       pipeline: 'Sales Pipeline',
+      tasks: 'Tasks',
       leads: route.leadPublicId ? 'Lead Profile' : 'Leads',
       add: 'Add Lead',
       automation: 'Automation',
@@ -269,6 +272,10 @@ export default function App() {
 
           {page === 'pipeline' && (
             <PipelinePage onOpenLead={openLead} onLeadUpdated={handleLeadUpdated} />
+          )}
+
+          {page === 'tasks' && (
+            <TasksPage onOpenLead={openLead} />
           )}
 
           {page === 'leads' && (
