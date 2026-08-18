@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { formatLeadBudget } from '../lib/currency'
 import type { Database } from '../types/database'
 import LeadProfileDrawer from '../components/LeadProfileDrawer'
 import '../leads-new.css'
@@ -17,16 +18,6 @@ const NEW_LEAD_WINDOW_MS = 30 * 60 * 1000
 function initials(name: string | null) {
   if (!name) return '—'
   return name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('')
-}
-
-function parseBudget(value: string | null) {
-  if (!value) return 0
-  const parsed = Number(value.replace(/[^0-9.]/g, ''))
-  return Number.isFinite(parsed) ? parsed : 0
-}
-
-function money(value: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(value)
 }
 
 function statusValue(lead: Lead) {
@@ -112,7 +103,7 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
         const routing = statusValue(lead).toLowerCase()
         if (category !== 'all' && routing !== category) return false
         if (!normalizedQuery) return true
-        return [lead.name, lead.email, lead.intent, lead.category, lead.routing_status, lead.source, lead.summary, lead.message]
+        return [lead.name, lead.email, lead.intent, lead.category, lead.routing_status, lead.source, lead.summary, lead.message, lead.currency_code]
           .filter(Boolean)
           .some((value) => String(value).toLowerCase().includes(normalizedQuery))
       })
@@ -215,7 +206,7 @@ export default function LeadsPage({ onLoaded, onAddLead }: Props) {
                     <td><div className="lead-cell"><span className="avatar">{initials(lead.name)}</span><div><div className="lead-name-line"><strong>{lead.name || 'Unnamed lead'}</strong>{newLead && <span className="new-lead-badge"><i />New</span>}</div><span>{lead.email || 'No email'}</span></div></div></td>
                     <td>{lead.intent || '—'}</td>
                     <td><span className={`category-pill ${categoryClass(routing)}`}><i />{routing}</span></td>
-                    <td>{lead.budget ? money(parseBudget(lead.budget)) : '—'}</td>
+                    <td><span title={lead.currency_code}>{formatLeadBudget(lead.budget, lead.currency_code)}</span></td>
                     <td>{lead.source || '—'}</td>
                     <td className="summary-cell" title={lead.summary || lead.message || ''}>{lead.summary || lead.message || '—'}</td>
                     <td><div className="lead-added-cell"><span>{new Date(lead.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>{newLead && <small>{freshnessLabel(lead)}</small>}</div></td>
