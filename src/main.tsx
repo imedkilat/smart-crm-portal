@@ -9,8 +9,24 @@ import './styles.css'
 import './session.css'
 import './global-search.css'
 
+const RETURN_TO_KEY = 'smartcrm:returnTo'
+
 function currentRoute() {
   return window.location.pathname.replace(/\/+$/, '') || '/'
+}
+
+function protectedReturnPath() {
+  const candidate = window.sessionStorage.getItem(RETURN_TO_KEY)
+  if (!candidate || !candidate.startsWith('/') || candidate.startsWith('//') || candidate === '/login') {
+    return '/dashboard'
+  }
+  return candidate
+}
+
+function consumeReturnPath() {
+  const path = protectedReturnPath()
+  window.sessionStorage.removeItem(RETURN_TO_KEY)
+  return path
 }
 
 function AuthLoading({ message = 'Checking workspace access…' }: { message?: string }) {
@@ -83,11 +99,12 @@ function AuthRouter() {
     if (!authReady) return
 
     if (route === '/login' && signedIn) {
-      window.location.replace('/')
+      window.location.replace(consumeReturnPath())
       return
     }
 
     if (route !== '/login' && route !== '/reset-password' && !signedIn) {
+      window.sessionStorage.setItem(RETURN_TO_KEY, `${window.location.pathname}${window.location.search}`)
       window.location.replace('/login')
     }
   }, [authReady, route, signedIn])
@@ -96,6 +113,10 @@ function AuthRouter() {
     setSigningOut(true)
     await signOut()
     setSigningOut(false)
+  }
+
+  function handleSignedIn() {
+    window.location.assign(consumeReturnPath())
   }
 
   if (route === '/reset-password') {
@@ -107,7 +128,7 @@ function AuthRouter() {
   }
 
   if (route === '/login') {
-    return signedIn ? <AuthLoading message="Opening workspace…" /> : <Login onSignedIn={() => window.location.assign('/')} />
+    return signedIn ? <AuthLoading message="Opening workspace…" /> : <Login onSignedIn={handleSignedIn} />
   }
 
   if (!signedIn) {
