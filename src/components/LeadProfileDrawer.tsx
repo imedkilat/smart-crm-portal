@@ -19,10 +19,6 @@ type EditForm = {
   routing_status: string
 }
 
-const STATUS_WEBHOOK_URL =
-  import.meta.env.VITE_N8N_STATUS_WEBHOOK_URL ||
-  'https://tolakautomations.app.n8n.cloud/webhook-test/smart-crm-status-route'
-
 const AUTOMATION_COOLDOWN_MS = 24 * 60 * 60 * 1000
 
 function initials(name: string | null) {
@@ -147,29 +143,25 @@ export default function LeadProfileDrawer({ lead, onClose, onUpdated }: Props) {
   }
 
   async function triggerStatusAutomation(previousStatus: string, updatedLead: Lead, eventId: string) {
-    const response = await fetch(STATUS_WEBHOOK_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        event: 'routing_status_changed',
-        event_id: eventId,
-        lead_id: updatedLead.id,
-        previous_status: previousStatus,
-        routing_status: updatedLead.routing_status,
-        changed_at: updatedLead.status_changed_at,
-        lead: {
-          name: updatedLead.name,
-          email: updatedLead.email,
-          budget: updatedLead.budget,
-          message: updatedLead.message,
-          category: updatedLead.category,
-          intent: updatedLead.intent,
-          summary: updatedLead.summary,
-          source: updatedLead.source,
-        },
-      }),
+    const { invokeSecureAutomation } = await import('../lib/secureFunctions')
+    await invokeSecureAutomation('crm-status-route', {
+      event: 'routing_status_changed',
+      event_id: eventId,
+      lead_id: updatedLead.id,
+      previous_status: previousStatus,
+      routing_status: updatedLead.routing_status,
+      changed_at: updatedLead.status_changed_at,
+      lead: {
+        name: updatedLead.name,
+        email: updatedLead.email,
+        budget: updatedLead.budget,
+        message: updatedLead.message,
+        category: updatedLead.category,
+        intent: updatedLead.intent,
+        summary: updatedLead.summary,
+        source: updatedLead.source,
+      },
     })
-    if (!response.ok) throw new Error(`n8n returned ${response.status}`)
   }
 
   async function logRoutingEvent(params: {
@@ -292,8 +284,8 @@ export default function LeadProfileDrawer({ lead, onClose, onUpdated }: Props) {
           setMessage('Changes saved')
           setWarning(
             automationError instanceof Error
-              ? `Routing status changed, but n8n did not start: ${automationError.message}`
-              : 'Routing status changed, but n8n did not start.'
+              ? `Routing status changed, but automation did not start: ${automationError.message}`
+              : 'Routing status changed, but automation did not start.'
           )
         }
       }
