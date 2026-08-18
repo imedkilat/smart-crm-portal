@@ -4,6 +4,8 @@ export type Database = {
       leads: {
         Row: {
           id: number
+          public_id: string
+          workspace_id: string | null
           created_at: string
           name: string | null
           email: string | null
@@ -20,6 +22,8 @@ export type Database = {
         }
         Insert: {
           id?: number
+          public_id?: string
+          workspace_id?: string | null
           created_at?: string
           name?: string | null
           email?: string | null
@@ -35,6 +39,44 @@ export type Database = {
           archived_at?: string | null
         }
         Update: Partial<Database['public']['Tables']['leads']['Insert']>
+        Relationships: []
+      }
+      workspaces: {
+        Row: {
+          id: string
+          public_id: string
+          name: string
+          slug: string
+          created_by: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          public_id?: string
+          name: string
+          slug: string
+          created_by: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['workspaces']['Insert']>
+        Relationships: []
+      }
+      workspace_members: {
+        Row: {
+          workspace_id: string
+          user_id: string
+          role: 'owner' | 'admin' | 'member'
+          created_at: string
+        }
+        Insert: {
+          workspace_id: string
+          user_id: string
+          role?: 'owner' | 'admin' | 'member'
+          created_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['workspace_members']['Insert']>
         Relationships: []
       }
       lead_routing_history: {
