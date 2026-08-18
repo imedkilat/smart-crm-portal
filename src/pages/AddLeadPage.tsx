@@ -1,8 +1,5 @@
 import { FormEvent, useRef, useState } from 'react'
-
-const LEAD_WEBHOOK_URL =
-  import.meta.env.VITE_N8N_LEAD_WEBHOOK_URL ||
-  'https://tolakautomations.app.n8n.cloud/webhook/799b1d66-0a5f-44b0-8f43-600ea4775979'
+import { invokeSecureAutomation } from '../lib/secureFunctions'
 
 type Props = {
   onCreated?: () => void
@@ -28,25 +25,17 @@ export default function AddLeadPage({ onCreated }: Props) {
   async function submitManualLead(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setSubmitState('submitting')
-    setFeedback('Sending lead through AI classification…')
+    setFeedback('Sending lead through secure AI classification…')
 
     try {
-      const response = await fetch(LEAD_WEBHOOK_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          submission_type: 'manual_add',
-          upload_date: today(),
-          name: name.trim(),
-          email: email.trim(),
-          budget: budget.trim(),
-          message: message.trim(),
-        }),
+      await invokeSecureAutomation('crm-lead-intake', {
+        submission_type: 'manual_add',
+        upload_date: today(),
+        name: name.trim(),
+        email: email.trim(),
+        budget: budget.trim(),
+        message: message.trim(),
       })
-
-      if (!response.ok) {
-        throw new Error(`Workflow returned ${response.status}`)
-      }
 
       setSubmitState('success')
       setFeedback('Lead classified and sent to the CRM pipeline.')
@@ -76,7 +65,7 @@ export default function AddLeadPage({ onCreated }: Props) {
     }
 
     setUploadState('submitting')
-    setUploadFeedback('Uploading and classifying spreadsheet leads…')
+    setUploadFeedback('Uploading securely and classifying spreadsheet leads…')
 
     try {
       const form = new FormData()
@@ -84,14 +73,7 @@ export default function AddLeadPage({ onCreated }: Props) {
       form.append('upload_date', today())
       form.append('file', file)
 
-      const response = await fetch(LEAD_WEBHOOK_URL, {
-        method: 'POST',
-        body: form,
-      })
-
-      if (!response.ok) {
-        throw new Error(`Workflow returned ${response.status}`)
-      }
+      await invokeSecureAutomation('crm-lead-intake', form)
 
       setUploadState('success')
       setUploadFeedback('Spreadsheet sent to the AI intake workflow successfully.')
@@ -111,7 +93,7 @@ export default function AddLeadPage({ onCreated }: Props) {
           <h1>Add Lead</h1>
           <p>Send a lead through n8n and Gemini for classification before it is stored in Supabase.</p>
         </div>
-        <span className="workflow-live-pill"><i /> n8n workflow connected</span>
+        <span className="workflow-live-pill"><i /> Secure automation gateway</span>
       </section>
 
       <section className="add-lead-layout">
@@ -169,7 +151,7 @@ export default function AddLeadPage({ onCreated }: Props) {
             <h2>Automated intake flow</h2>
             <div className="intake-steps">
               {[
-                ['01', 'Webhook receives lead', 'Secure POST from this workspace to n8n.'],
+                ['01', 'Authenticated gateway', 'Your signed-in Supabase session is verified before automation can run.'],
                 ['02', 'Gemini classifies', 'Category, intent and summary are generated from the inquiry.'],
                 ['03', 'Supabase stores record', 'The structured lead becomes available across the CRM.'],
                 ['04', 'Follow-up engine', 'Downstream automation can route outreach by lead quality.'],
