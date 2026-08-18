@@ -4,11 +4,13 @@ import { formatLeadBudget } from '../lib/currency'
 import type { Database } from '../types/database'
 import '../lead-drawer.css'
 import '../lead-ops.css'
+import '../lead-activity.css'
 
 type Lead = Database['public']['Tables']['leads']['Row']
 type RoutingHistory = Database['public']['Tables']['lead_routing_history']['Row']
 type LeadNote = Database['public']['Tables']['lead_notes']['Row']
 type LeadTask = Database['public']['Tables']['lead_tasks']['Row']
+type LeadActivity = Database['public']['Tables']['lead_activities']['Row']
 
 type Props = {
   lead: Lead
@@ -66,6 +68,27 @@ function formatActivityDate(value: string) {
   })
 }
 
+function activityIcon(type: string) {
+  if (type === 'note_added') return 'N'
+  if (type === 'task_created') return '+'
+  if (type === 'task_completed') return '✓'
+  if (type === 'task_reopened') return '↻'
+  if (type === 'pipeline_stage_changed') return '→'
+  return '•'
+}
+
+function activityDetail(activity: LeadActivity) {
+  const meta = activity.metadata || {}
+  if (activity.activity_type === 'pipeline_stage_changed') {
+    const from = typeof meta.from_stage === 'string' ? meta.from_stage : 'Unstaged'
+    const to = typeof meta.to_stage === 'string' ? meta.to_stage : 'Unstaged'
+    return `${from} → ${to}`
+  }
+  if (typeof meta.task_title === 'string') return meta.task_title
+  if (typeof meta.note_id === 'string') return meta.note_id
+  return activity.public_id
+}
+
 export default function LeadProfileDrawer({ lead, onClose, onUpdated }: Props) {
   const [currentLead, setCurrentLead] = useState(lead)
   const [editing, setEditing] = useState(false)
@@ -79,6 +102,7 @@ export default function LeadProfileDrawer({ lead, onClose, onUpdated }: Props) {
   const [historyLoading, setHistoryLoading] = useState(false)
   const [notes, setNotes] = useState<LeadNote[]>([])
   const [tasks, setTasks] = useState<LeadTask[]>([])
+  const [activities, setActivities] = useState<LeadActivity[]>([])
   const [opsLoading, setOpsLoading] = useState(false)
   const [opsError, setOpsError] = useState<string | null>(null)
   const [noteDraft, setNoteDraft] = useState('')
@@ -134,7 +158,7 @@ export default function LeadProfileDrawer({ lead, onClose, onUpdated }: Props) {
     setOpsLoading(true)
     setOpsError(null)
 
-    const [notesResult, tasksResult] = await Promise.all([
+    const [notesResult, tasksResult, activitiesResult] = await Promise.all([
       supabase
         .from('lead_notes')
         .select('*')
@@ -147,12 +171,19 @@ export default function LeadProfileDrawer({ lead, onClose, onUpdated }: Props) {
         .eq('lead_id', leadId)
         .order('created_at', { ascending: false })
         .limit(30),
+      supabase
+        .from('lead_activities')
+        .select('*')
+        .eq('lead_id', leadId)
+        .order('occurred_at', { ascending: false })
+        .limit(40),
     ])
 
-    if (notesResult.error || tasksResult.error) {
-      setOpsError(notesResult.error?.message || tasksResult.error?.message || 'Could not load lead operations.')
+    if (notesResult.error || tasksResult.error || activitiesResult.error) {
+      setOpsError(notesResult.error?.message || tasksResult.error?.message || activitiesResult.error?.message || 'Could not load lead operations.')
     } else {
       setNotes((notesResult.data || []) as LeadNote[])
+      setActivities((activitiesResult.data || []) as LeadActivity[])
       const rows = (tasksResult.data || []) as LeadTask[]
       setTasks([...rows].sort((a, b) => {
         const aDone = a.status === 'done' ? 1 : 0
@@ -568,9 +599,31 @@ export default function LeadProfileDrawer({ lead, onClose, onUpdated }: Props) {
               </section>
             </div>
 
+            <section className="lead-drawer-section lead-activity-section">
+              <div className="lead-activity-heading">
+                <div><span className="mini-label">AUDIT TRAIL</span><h3>Activity timeline</h3><p>Pipeline moves, notes and task changes are recorded server-side.</p></div>
+                <span className="lead-ops-count">{activities.length}</span>
+              </div>
+              {opsLoading ? (
+                <p className="lead-activity-empty">Loading activity…</p>
+              ) : activities.length ? (
+                <div className="lead-activity-list">
+                  {activities.map((activity) => (
+                    <article className="lead-activity-item" key={activity.id}>
+                      <span className={`lead-activity-icon ${activity.activity_type}`}>{activityIcon(activity.activity_type)}</span>
+                      <div className="lead-activity-copy"><strong>{activity.title}</strong><span>{activityDetail(activity)}</span></div>
+                      <time>{formatActivityDate(activity.occurred_at)}</time>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <p className="lead-activity-empty">No operational activity has been logged yet.</p>
+              )}
+            </section>
+
             <section className="lead-drawer-section routing-history-section">
               <div className="routing-history-heading">
-                <div><span className="mini-label">ROUTING AUDIT</span><h3>Status history</h3></div>
+                <div><span className="mini-label">ROUTING AUDIT</span><h3>AI routing history</h3></div>
                 <span className="routing-cooldown-pill">24h duplicate guard</span>
               </div>
               {historyLoading ? (
