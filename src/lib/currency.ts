@@ -12,7 +12,7 @@ export function normalizeCurrencyCode(value: string | null | undefined) {
   return /^[A-Z]{3}$/.test(code) ? code : 'USD'
 }
 
-export function formatMoney(value: number, currencyCode: string | null | undefined) {
+export function formatMoney(value: number, currencyCode: string | null | undefined = 'USD') {
   const currency = normalizeCurrencyCode(currencyCode)
   try {
     return new Intl.NumberFormat(currency === 'PHP' ? 'en-PH' : 'en-US', {
@@ -43,13 +43,13 @@ export function budgetTotalsByCurrency<T extends { budget: string | null; curren
 }
 
 export function formatCurrencyTotals(totals: Map<string, number>) {
-  if (!totals.size) return '—'
-  return [...totals.entries()]
-    .sort(([a], [b]) => {
-      if (a === 'USD') return -1
-      if (b === 'USD') return 1
-      return a.localeCompare(b)
-    })
-    .map(([currency, total]) => `${formatMoney(total, currency)} ${currency}`)
-    .join(' · ')
+  const usdTotal = totals.get('USD') || 0
+  return usdTotal ? formatMoney(usdTotal, 'USD') : '—'
+}
+
+export function usdBudgetTotal<T extends { budget: string | null; currency_code: string | null | undefined }>(rows: T[]) {
+  return rows.reduce((sum, row) => {
+    if (normalizeCurrencyCode(row.currency_code) !== 'USD') return sum
+    return sum + parseBudget(row.budget)
+  }, 0)
 }
