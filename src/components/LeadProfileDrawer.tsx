@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { formatLeadBudget } from '../lib/currency'
 import type { Database } from '../types/database'
 import '../lead-drawer.css'
 
@@ -16,6 +17,7 @@ type EditForm = {
   name: string
   email: string
   budget: string
+  currency_code: string
   routing_status: string
 }
 
@@ -24,20 +26,6 @@ const AUTOMATION_COOLDOWN_MS = 24 * 60 * 60 * 1000
 function initials(name: string | null) {
   if (!name) return '—'
   return name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('')
-}
-
-function parseBudget(value: string | null) {
-  if (!value) return 0
-  const parsed = Number(value.replace(/[^0-9.]/g, ''))
-  return Number.isFinite(parsed) ? parsed : 0
-}
-
-function money(value: number) {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: 0,
-  }).format(value)
 }
 
 function statusValue(lead: Lead) {
@@ -56,6 +44,7 @@ function toEditForm(lead: Lead): EditForm {
     name: lead.name || '',
     email: lead.email || '',
     budget: lead.budget || '',
+    currency_code: lead.currency_code || 'USD',
     routing_status: lead.routing_status || lead.category || '',
   }
 }
@@ -155,6 +144,7 @@ export default function LeadProfileDrawer({ lead, onClose, onUpdated }: Props) {
         name: updatedLead.name,
         email: updatedLead.email,
         budget: updatedLead.budget,
+        currency_code: updatedLead.currency_code,
         message: updatedLead.message,
         category: updatedLead.category,
         intent: updatedLead.intent,
@@ -219,6 +209,7 @@ export default function LeadProfileDrawer({ lead, onClose, onUpdated }: Props) {
       name: editForm.name.trim() || null,
       email: editForm.email.trim() || null,
       budget: editForm.budget.trim() || null,
+      currency_code: editForm.currency_code.trim().toUpperCase() || 'USD',
       routing_status: nextStatus,
       ...(routingChanged ? { status_changed_at: changedAt } : {}),
     }
@@ -350,7 +341,7 @@ export default function LeadProfileDrawer({ lead, onClose, onUpdated }: Props) {
             {error && <div className="lead-save-error" role="alert">{error}</div>}
 
             <div className="lead-detail-grid">
-              <LeadDetail label="Budget" value={currentLead.budget ? money(parseBudget(currentLead.budget)) : 'Not provided'} />
+              <LeadDetail label="Budget" value={currentLead.budget ? `${formatLeadBudget(currentLead.budget, currentLead.currency_code)} ${currentLead.currency_code}` : 'Not provided'} />
               <LeadDetail label="Lead ID" value={`#${currentLead.id}`} />
               <LeadDetail label="Added" value={new Date(currentLead.created_at).toLocaleString('en-US', { month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })} />
               <LeadDetail label="Source" value={currentLead.source || 'Unknown'} />
@@ -400,13 +391,20 @@ export default function LeadProfileDrawer({ lead, onClose, onUpdated }: Props) {
             <div className="lead-edit-intro">
               <span className="mini-label">EDIT RECORD</span>
               <h3>Update operational details</h3>
-              <p>Contact fields can be corrected. Changing routing status requests the matching n8n follow-up path.</p>
+              <p>Contact and budget fields can be corrected. Changing routing status requests the matching n8n follow-up path.</p>
             </div>
 
             <div className="lead-edit-grid">
               <label><span>Name</span><input value={editForm.name} onChange={(event) => setEditForm({ ...editForm, name: event.target.value })} /></label>
               <label><span>Email</span><input type="email" value={editForm.email} onChange={(event) => setEditForm({ ...editForm, email: event.target.value })} /></label>
               <label><span>Budget</span><input value={editForm.budget} onChange={(event) => setEditForm({ ...editForm, budget: event.target.value })} /></label>
+              <label>
+                <span>Currency</span>
+                <select value={editForm.currency_code} onChange={(event) => setEditForm({ ...editForm, currency_code: event.target.value })}>
+                  <option value="USD">USD · US Dollar</option>
+                  <option value="PHP">PHP · Philippine Peso</option>
+                </select>
+              </label>
               <label>
                 <span>Routing status</span>
                 <select value={editForm.routing_status} onChange={(event) => setEditForm({ ...editForm, routing_status: event.target.value })}>
