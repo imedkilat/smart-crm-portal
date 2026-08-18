@@ -8,6 +8,7 @@ export type Database = {
           name: string | null
           email: string | null
           budget: string | null
+          currency_code: string
           message: string | null
           category: string | null
           intent: string | null
@@ -23,6 +24,7 @@ export type Database = {
           name?: string | null
           email?: string | null
           budget?: string | null
+          currency_code?: string
           message?: string | null
           category?: string | null
           intent?: string | null
