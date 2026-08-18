@@ -8,6 +8,7 @@ import LeadsPage from './pages/LeadsPage'
 import PipelinePage from './pages/PipelinePage'
 import TasksPage from './pages/TasksPage'
 import AddLeadPage from './pages/AddLeadPage'
+import CopilotPage from './pages/CopilotPage'
 import ReportsPage from './pages/ReportsPage'
 import AutomationPage from './pages/AutomationPage'
 import SettingsPage from './pages/SettingsPage'
@@ -41,6 +42,7 @@ const navItems: NavItem[] = [
   { id: 'tasks', label: 'Tasks', icon: '✓' },
   { id: 'leads', label: 'Leads', icon: '◌' },
   { id: 'add', label: 'Add Lead', icon: '+' },
+  { id: 'copilot', label: 'AI Brain', icon: '✦' },
   { id: 'automation', label: 'Automation', icon: '⌁' },
   { id: 'analytics', label: 'Analytics', icon: '↗' },
   { id: 'reports', label: 'Reports', icon: '▤' },
@@ -118,6 +120,7 @@ export default function App() {
       tasks: 'Tasks',
       leads: route.leadPublicId ? 'Lead Profile' : 'Leads',
       add: 'Add Lead',
+      copilot: 'AI Brain',
       automation: 'Automation',
       analytics: 'Analytics',
       reports: 'Reports',
@@ -292,6 +295,8 @@ export default function App() {
             <AddLeadPage onCreated={() => navigate('leads')} />
           )}
 
+          {page === 'copilot' && <CopilotPage />}
+
           {page === 'automation' && <AutomationPage onLeadUpdated={handleLeadUpdated} />}
 
           {page === 'analytics' && (
@@ -347,6 +352,9 @@ function DashboardPage({
           <p>Here&apos;s what&apos;s happening with your lead pipeline.</p>
         </div>
         <div className="heading-actions">
+          <button className="button secondary" type="button" onClick={() => setPage('copilot')}>
+            Ask AI Brain
+          </button>
           <button className="button secondary" type="button" onClick={() => setPage('pipeline')}>
             Open pipeline
           </button>
@@ -363,7 +371,7 @@ function DashboardPage({
         <MetricCard label="Hot" value={loading ? '—' : String(metrics.hot)} tone="red" note="Hot routing priority" />
         <MetricCard label="Warm" value={loading ? '—' : String(metrics.warm)} tone="amber" note="Warm routing priority" />
         <MetricCard label="Cold" value={loading ? '—' : String(metrics.cold)} tone="cyan" note="Cold routing priority" />
-        <MetricCard label="Lead budget value" value={loading ? '—' : formatCurrencyTotals(metrics.pipelineByCurrency)} tone="violet" note="AI-qualified lead budgets" wide />
+        <MetricCard label="Lead budget value" value={loading ? '—' : formatCurrencyTotals(metrics.pipelineByCurrency)} tone="violet" note="Active lead budgets · USD" wide />
       </section>
 
       <section className="automation-card">
@@ -608,8 +616,8 @@ function AnalyticsPage({
         <AnalyticsMetric label="Hot routing share" value={loading ? '—' : `${hotShare}%`} note={`${metrics.hot} of ${metrics.total} leads`} accent="red" />
         <AnalyticsMetric
           label="Average lead budget"
-          value={loading ? '—' : singleCurrencyCode ? formatMoney(avgBudget, singleCurrencyCode) : 'Mixed currencies'}
-          note={singleCurrencyCode ? `Across ${budgetLeadCount} budgeted leads` : 'Currency totals are kept separate'}
+          value={loading ? '—' : singleCurrencyCode ? formatMoney(avgBudget, singleCurrencyCode) : '—'}
+          note={singleCurrencyCode ? `Across ${budgetLeadCount} budgeted leads · USD` : 'No USD budget data'}
           accent="violet"
         />
         <AnalyticsMetric label="Top source" value={loading ? '—' : dominantSource?.label || '—'} note={dominantSource ? `${dominantSource.count} leads captured` : 'No source data'} accent="blue" />
@@ -700,7 +708,7 @@ function AnalyticsPage({
                   <div className="budget-copy">
                     <span><i className={item.className} />{item.label}</span>
                     <strong>{formatCurrencyTotals(item.totals)}</strong>
-                    <small>{singleCurrencyCode ? `Avg ${formatMoney(average, singleCurrencyCode)}` : 'Currency-safe totals'}</small>
+                    <small>{singleCurrencyCode ? `Avg ${formatMoney(average, singleCurrencyCode)}` : 'No USD budget data'}</small>
                   </div>
                   {singleCurrencyCode && (
                     <div className="budget-track"><span className={item.className} style={{ width: `${(singleTotal / maxBudget) * 100}%` }} /></div>
