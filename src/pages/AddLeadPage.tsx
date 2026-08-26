@@ -7,8 +7,56 @@ type Props = {
 
 type SubmitState = 'idle' | 'submitting' | 'success' | 'error'
 
+type IntakeLead = {
+  category?: string | null
+  intent?: string | null
+}
+
+type IntakeResult = {
+  ok: boolean
+  saved_count?: number
+  leads?: IntakeLead[]
+  stage?: string
+  error?: string
+}
+
 function today() {
   return new Date().toLocaleDateString('en-US')
+}
+
+// The intake automation now waits for real AI classification and the
+// Supabase write before responding, and reports what actually happened
+// instead of "processing started." Still validate the shape here rather
+// than trusting a 2xx status alone — n8n can, in rare cases, return 200
+// with an empty body if nothing ever reaches its response node.
+function parseIntakeResult(raw: string): IntakeResult {
+  if (!raw) throw new Error('The automation returned an empty response, so the result is unknown.')
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    throw new Error('The automation returned an unexpected response, so the result is unknown.')
+  }
+  const result = parsed as IntakeResult
+  if (!result || typeof result.ok !== 'boolean') {
+    throw new Error('The automation returned an unexpected response, so the result is unknown.')
+  }
+  if (!result.ok) {
+    throw new Error(result.error || 'The lead could not be processed.')
+  }
+  return result
+}
+
+function describeLeads(result: IntakeResult): string {
+  const leads = result.leads || []
+  if (leads.length === 1) {
+    const [lead] = leads
+    const category = lead.category || 'Uncategorized'
+    const intent = lead.intent ? ` (${lead.intent})` : ''
+    return `Lead classified as ${category}${intent} and added to the pipeline.`
+  }
+  const count = result.saved_count ?? leads.length
+  return `${count} lead${count === 1 ? '' : 's'} classified and added to the pipeline.`
 }
 
 export default function AddLeadPage({ onCreated }: Props) {
@@ -28,7 +76,7 @@ export default function AddLeadPage({ onCreated }: Props) {
     setFeedback('Sending lead through secure AI classification…')
 
     try {
-      await invokeSecureAutomation('crm-lead-intake', {
+      const raw = await invokeSecureAutomation('crm-lead-intake', {
         submission_type: 'manual_add',
         upload_date: today(),
         name: name.trim(),
@@ -37,9 +85,10 @@ export default function AddLeadPage({ onCreated }: Props) {
         currency_code: 'USD',
         message: message.trim(),
       })
+      const result = parseIntakeResult(raw)
 
       setSubmitState('success')
-      setFeedback('Lead classified and sent to the CRM pipeline.')
+      setFeedback(describeLeads(result))
       setName('')
       setEmail('')
       setBudget('')
@@ -74,10 +123,11 @@ export default function AddLeadPage({ onCreated }: Props) {
       form.append('upload_date', today())
       form.append('file', file)
 
-      await invokeSecureAutomation('crm-lead-intake', form)
+      const raw = await invokeSecureAutomation('crm-lead-intake', form)
+      const result = parseIntakeResult(raw)
 
       setUploadState('success')
-      setUploadFeedback('Spreadsheet sent to the AI intake workflow successfully.')
+      setUploadFeedback(describeLeads(result))
       if (fileRef.current) fileRef.current.value = ''
       onCreated?.()
     } catch (error) {
