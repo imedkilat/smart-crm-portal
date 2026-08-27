@@ -73,13 +73,14 @@ begin
       raise exception 'Workspace name must be 100 characters or fewer' using errcode = '22023';
     end if;
 
-    v_slug_base := pg_catalog.trim(
-      both '-' from pg_catalog.regexp_replace(
+    v_slug_base := pg_catalog.btrim(
+      pg_catalog.regexp_replace(
         pg_catalog.lower(v_requested_name),
         '[^a-z0-9]+',
         '-',
         'g'
-      )
+      ),
+      '-'
     );
 
     if v_slug_base = '' then
