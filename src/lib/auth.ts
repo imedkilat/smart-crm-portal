@@ -35,8 +35,8 @@ function friendlyError(message: string) {
   return message
 }
 
-function unavailable(): AuthResult {
-  return { ok: false, message: 'Supabase authentication is not configured for this environment yet.' }
+function unavailable() {
+  return { ok: false, message: 'Supabase authentication is not configured for this environment yet.' } as const
 }
 
 export async function signIn(email: string, password: string): Promise<AuthResult> {
