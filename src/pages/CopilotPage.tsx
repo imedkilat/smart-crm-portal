@@ -19,6 +19,8 @@ type WorkspaceState = {
   name: string
 }
 
+type WorkspaceRole = 'owner' | 'admin' | 'member'
+
 const quickPrompts = [
   'What needs my attention today?',
   'Which opportunities look most at risk right now?',
@@ -41,6 +43,7 @@ function formatTime(value: string) {
 
 export default function CopilotPage() {
   const [workspace, setWorkspace] = useState<WorkspaceState | null>(null)
+  const [workspaceRole, setWorkspaceRole] = useState<WorkspaceRole>('member')
   const [interactions, setInteractions] = useState<Interaction[]>([])
   const [memories, setMemories] = useState<Memory[]>([])
   const [question, setQuestion] = useState('')
@@ -51,6 +54,7 @@ export default function CopilotPage() {
   const [correctionFor, setCorrectionFor] = useState<string | null>(null)
   const [correction, setCorrection] = useState('')
   const [feedbackSaving, setFeedbackSaving] = useState(false)
+  const [memorySavingId, setMemorySavingId] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
 
   const load = useCallback(async () => {
@@ -98,6 +102,7 @@ export default function CopilotPage() {
 
     const currentWorkspace = workspaceResult.data as WorkspaceState
     setWorkspace(currentWorkspace)
+    setWorkspaceRole((memberships[0].role as WorkspaceRole) || 'member')
     setInteractions((interactionResult.data || []) as Interaction[])
     setMemories((memoryResult.data || []) as Memory[])
 
@@ -110,6 +115,7 @@ export default function CopilotPage() {
 
   const activeMemories = useMemo(() => memories.filter((memory) => memory.status === 'active'), [memories])
   const candidateMemories = useMemo(() => memories.filter((memory) => memory.status === 'candidate'), [memories])
+  const canReviewMemories = workspaceRole === 'owner' || workspaceRole === 'admin'
 
   async function ask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -200,6 +206,29 @@ export default function CopilotPage() {
     setFeedbackSaving(false)
   }
 
+  async function reviewMemory(memory: Memory, status: 'active' | 'rejected') {
+    if (!supabase || !workspace || !canReviewMemories || memorySavingId) return
+
+    setMemorySavingId(memory.id)
+    setError(null)
+    setNotice(null)
+
+    const { error: memoryError } = await supabase
+      .from('ai_memories')
+      .update({ status })
+      .eq('id', memory.id)
+      .eq('workspace_id', workspace.id)
+
+    if (memoryError) {
+      setError(memoryError.message)
+    } else {
+      setNotice(status === 'active' ? 'Memory approved for future AI context.' : 'Memory rejected and removed from the review queue.')
+      await load()
+    }
+
+    setMemorySavingId(null)
+  }
+
   function startNewConversation() {
     if (!workspace) return
     const next = `conv_${crypto.randomUUID()}`
@@ -277,6 +306,14 @@ export default function CopilotPage() {
                 <div><span className={`memory-status ${memory.status}`}>{memory.status}</span><span className="memory-type">{memory.memory_type}</span></div>
                 <p>{memory.content}</p>
                 <small>{Math.round(memory.confidence * 100)}% confidence · evidence {memory.evidence_count}</small>
+                {memory.status === 'candidate' && canReviewMemories && (
+                  <div className="copilot-memory-actions">
+                    <button type="button" onClick={() => void reviewMemory(memory, 'rejected')} disabled={memorySavingId !== null}>Reject</button>
+                    <button type="button" className="approve" onClick={() => void reviewMemory(memory, 'active')} disabled={memorySavingId !== null}>
+                      {memorySavingId === memory.id ? 'Saving…' : 'Approve'}
+                    </button>
+                  </div>
+                )}
               </article>
             ))}
             {!loading && memories.length === 0 && <div className="copilot-memory-empty">No durable memories yet. They build as the workspace is used and corrected.</div>}
