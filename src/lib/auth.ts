@@ -1,6 +1,9 @@
 import { supabase, isSupabaseConfigured } from './supabase'
 
 export type AuthResult = { ok: true } | { ok: false; message: string }
+export type SignUpResult =
+  | { ok: true; confirmationRequired: boolean }
+  | { ok: false; message: string }
 
 function friendlyError(message: string) {
   const value = message.toLowerCase()
@@ -11,6 +14,14 @@ function friendlyError(message: string) {
 
   if (value.includes('email not confirmed')) {
     return 'Confirm your email address before signing in.'
+  }
+
+  if (value.includes('already registered') || value.includes('already exists')) {
+    return 'An account may already exist for that email. Try signing in or reset your password.'
+  }
+
+  if (value.includes('password') && (value.includes('weak') || value.includes('characters'))) {
+    return 'Choose a stronger password with at least 8 characters.'
   }
 
   if (value.includes('rate') || value.includes('too many')) {
@@ -37,6 +48,28 @@ export async function signIn(email: string, password: string): Promise<AuthResul
   })
 
   return error ? { ok: false, message: friendlyError(error.message) } : { ok: true }
+}
+
+export async function signUp(email: string, password: string, workspaceName: string): Promise<SignUpResult> {
+  if (!isSupabaseConfigured || !supabase) return unavailable()
+
+  const { data, error } = await supabase.auth.signUp({
+    email: email.trim(),
+    password,
+    options: {
+      data: {
+        workspace_name: workspaceName.trim(),
+      },
+      emailRedirectTo: `${window.location.origin}/login`,
+    },
+  })
+
+  if (error) return { ok: false, message: friendlyError(error.message) }
+
+  return {
+    ok: true,
+    confirmationRequired: !data.session,
+  }
 }
 
 export async function sendPasswordReset(email: string): Promise<AuthResult> {
