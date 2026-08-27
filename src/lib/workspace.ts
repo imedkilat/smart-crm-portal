@@ -9,6 +9,27 @@ export type WorkspaceContext = {
   planCode: string
 }
 
+type WorkspaceOnboardingRow = {
+  workspace_id: string
+  workspace_public_id: string
+  workspace_name: string
+  workspace_slug: string
+  workspace_role: string
+  plan_code: string
+}
+
+type RpcError = {
+  code?: string
+  message: string
+}
+
+type WorkspaceRpcClient = {
+  rpc: (
+    functionName: string,
+    args: Record<string, unknown>,
+  ) => Promise<{ data: WorkspaceOnboardingRow[] | null; error: RpcError | null }>
+}
+
 export type WorkspaceOnboardingResult =
   | { ok: true; workspace: WorkspaceContext }
   | { ok: false; message: string }
@@ -36,7 +57,10 @@ export async function ensureWorkspaceOnboarding(workspaceName?: string | null): 
     return { ok: false, message: 'Supabase is not configured for this environment.' }
   }
 
-  const { data, error } = await supabase.rpc('ensure_workspace_onboarding', {
+  // The generated database type is intentionally updated only when schema
+  // generation is run. Keep this new RPC boundary typed locally until then.
+  const rpcClient = supabase as unknown as WorkspaceRpcClient
+  const { data, error } = await rpcClient.rpc('ensure_workspace_onboarding', {
     p_workspace_name: workspaceName?.trim() || null,
   })
 
