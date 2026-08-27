@@ -163,12 +163,12 @@
           "conditions": [
             {
               "id": "bf353b7d-4f5a-4790-b376-a642ed4c2236",
-              "leftValue": "={{ $json.create_task === true && $json.write_enabled === true }}",
-              "rightValue": true,
+              "leftValue": "={{ $json.create_task === true && $json.write_enabled === true ? 'yes' : 'no' }}",
+              "rightValue": "yes",
               "operator": {
-                "type": "boolean",
-                "operation": "true",
-                "singleValue": true
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
               }
             }
           ],
