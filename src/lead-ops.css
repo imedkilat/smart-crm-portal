@@ -77,8 +77,12 @@
 
 .lead-task-form-row {
   display: grid;
-  grid-template-columns: 1fr 116px;
+  grid-template-columns: minmax(0, 1fr) minmax(92px, 116px);
   gap: 8px;
+}
+
+.lead-task-form-row > * {
+  min-width: 0;
 }
 
 .lead-ops-submit {
