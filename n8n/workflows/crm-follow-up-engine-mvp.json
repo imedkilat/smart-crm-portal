@@ -1,0 +1,379 @@
+{
+  "name": "Smart CRM Portal - Follow-Up Engine MVP (Draft)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 1
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1040,
+        0
+      ],
+      "id": "b82f3904-a265-4e06-a255-b55636c686d1",
+      "name": "Hourly Schedule"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "b4a63d36-0e84-4fd6-8273-90889f422cc7",
+              "name": "write_enabled",
+              "value": false,
+              "type": "boolean"
+            },
+            {
+              "id": "b6db594b-edc7-4b04-a227-43cbd5052ec6",
+              "name": "hot_stale_hours",
+              "value": 2,
+              "type": "number"
+            },
+            {
+              "id": "76743609-067d-42cb-be31-a92153d0b44d",
+              "name": "warm_stale_hours",
+              "value": 24,
+              "type": "number"
+            },
+            {
+              "id": "c0c3a1ff-c421-4f59-b64d-4b30ad055e43",
+              "name": "timezone",
+              "value": "Asia/Manila",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -816,
+        0
+      ],
+      "id": "a20b2962-34f0-4f0e-bdcc-f6f1b4e51a36",
+      "name": "Safety Configuration"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "leads",
+        "returnAll": true,
+        "filterType": "string",
+        "filterString": "archived_at=is.null&routing_status=in.(Hot,Warm)&select=id,public_id,workspace_id,name,email,routing_status,pipeline_stage_id,created_at,updated_at"
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -592,
+        0
+      ],
+      "id": "ec7474d7-aa4c-49b7-a54a-4f4035966e04",
+      "name": "Fetch Active Hot Warm Leads",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "lead_activities",
+        "returnAll": true,
+        "filterType": "string",
+        "filterString": "select=lead_id,occurred_at"
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -368,
+        0
+      ],
+      "id": "cb00633a-2050-4efe-a1a3-07d23a0fdcd2",
+      "name": "Fetch Lead Activities",
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "lead_tasks",
+        "returnAll": true,
+        "filterType": "string",
+        "filterString": "select=lead_id,description,status,created_at"
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -144,
+        0
+      ],
+      "id": "792dd69c-c0c1-4251-a22d-b4d16ec65132",
+      "name": "Fetch Existing Tasks",
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "pipeline_stages",
+        "returnAll": true,
+        "filterType": "string",
+        "filterString": "select=id,stage_type"
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        80,
+        0
+      ],
+      "id": "8f2d44d4-5d43-4d5a-937f-0ef35cf8d66a",
+      "name": "Fetch Pipeline Stages",
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const config = $('Safety Configuration').first().json;\nconst now = new Date();\nconst dayKey = new Intl.DateTimeFormat('en-CA', {\n  timeZone: config.timezone || 'Asia/Manila',\n  year: 'numeric',\n  month: '2-digit',\n  day: '2-digit',\n}).format(now);\n\nconst leads = $items('Fetch Active Hot Warm Leads')\n  .map((item) => item.json)\n  .filter((lead) => lead.id && lead.workspace_id);\n\nconst activities = $items('Fetch Lead Activities')\n  .map((item) => item.json)\n  .filter((activity) => activity.lead_id && activity.occurred_at);\n\nconst tasks = $items('Fetch Existing Tasks')\n  .map((item) => item.json)\n  .filter((task) => task.lead_id);\n\nconst stages = $items('Fetch Pipeline Stages')\n  .map((item) => item.json)\n  .filter((stage) => stage.id);\n\nconst latestActivityByLead = new Map();\nfor (const activity of activities) {\n  const timestamp = new Date(activity.occurred_at).getTime();\n  const previous = latestActivityByLead.get(activity.lead_id) || 0;\n  if (Number.isFinite(timestamp) && timestamp > previous) {\n    latestActivityByLead.set(activity.lead_id, timestamp);\n  }\n}\n\nconst stageTypeById = new Map(stages.map((stage) => [stage.id, stage.stage_type]));\nconst openTaskLeadIds = new Set(\n  tasks.filter((task) => task.status === 'open').map((task) => task.lead_id),\n);\nconst taskDescriptions = tasks\n  .map((task) => String(task.description || ''))\n  .filter(Boolean);\n\nconst candidates = [];\nfor (const lead of leads) {\n  const stageType = lead.pipeline_stage_id\n    ? stageTypeById.get(lead.pipeline_stage_id)\n    : 'open';\n\n  if (stageType === 'won' || stageType === 'lost') continue;\n  if (openTaskLeadIds.has(lead.id)) continue;\n\n  const thresholdHours = lead.routing_status === 'Hot'\n    ? Number(config.hot_stale_hours || 2)\n    : Number(config.warm_stale_hours || 24);\n\n  const fallbackTouch = new Date(lead.updated_at || lead.created_at || 0).getTime();\n  const lastTouchMs = latestActivityByLead.get(lead.id) || fallbackTouch;\n  if (!Number.isFinite(lastTouchMs)) continue;\n\n  const inactiveHours = (now.getTime() - lastTouchMs) / 3600000;\n  if (inactiveHours < thresholdHours) continue;\n\n  const marker = '[AUTO-FOLLOW-UP:v1:' +\n    lead.public_id + ':' + dayKey + ':' + lead.routing_status + ']';\n\n  if (taskDescriptions.some((description) => description.includes(marker))) {\n    continue;\n  }\n\n  const dueHours = lead.routing_status === 'Hot' ? 2 : 24;\n  const dueAt = new Date(now.getTime() + dueHours * 3600000).toISOString();\n\n  candidates.push({\n    json: {\n      create_task: true,\n      write_enabled: config.write_enabled === true,\n      workspace_id: lead.workspace_id,\n      lead_id: lead.id,\n      lead_public_id: lead.public_id,\n      lead_name: lead.name || lead.email || lead.public_id,\n      routing_status: lead.routing_status,\n      title: 'Follow up with ' + (lead.name || lead.email || lead.public_id),\n      description:\n        'Auto-created by Follow-Up Engine v1. ' +\n        lead.routing_status + ' lead inactive for ' +\n        Math.floor(inactiveHours) + ' hours. ' + marker,\n      priority: lead.routing_status === 'Hot' ? 'high' : 'medium',\n      due_at: dueAt,\n      inactivity_hours: Math.floor(inactiveHours),\n      idempotency_marker: marker,\n    },\n  });\n}\n\nif (candidates.length === 0) {\n  return [{\n    json: {\n      create_task: false,\n      write_enabled: config.write_enabled === true,\n      message: 'No eligible stale Hot or Warm leads found.',\n      scanned_leads: leads.length,\n    },\n  }];\n}\n\nreturn candidates;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        304,
+        0
+      ],
+      "id": "1df64cae-f3cf-407e-8d19-b72c21864635",
+      "name": "Build Safe Task Candidates"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "bf353b7d-4f5a-4790-b376-a642ed4c2236",
+              "leftValue": "={{ $json.create_task === true && $json.write_enabled === true ? 'yes' : 'no' }}",
+              "rightValue": "yes",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        544,
+        0
+      ],
+      "id": "8a0210e6-ffdb-4244-97c6-ac050ef01e63",
+      "name": "Writes Explicitly Enabled"
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "tableId": "lead_tasks",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "workspace_id",
+              "fieldValue": "={{ $json.workspace_id }}"
+            },
+            {
+              "fieldId": "lead_id",
+              "fieldValue": "={{ $json.lead_id }}"
+            },
+            {
+              "fieldId": "title",
+              "fieldValue": "={{ $json.title }}"
+            },
+            {
+              "fieldId": "description",
+              "fieldValue": "={{ $json.description }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "open"
+            },
+            {
+              "fieldId": "priority",
+              "fieldValue": "={{ $json.priority }}"
+            },
+            {
+              "fieldId": "due_at",
+              "fieldValue": "={{ $json.due_at }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        800,
+        -112
+      ],
+      "id": "79dbfd84-1fa7-41e0-8a60-793590221a0d",
+      "name": "Create Internal Follow-up Task"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const rows = $input.all().map((item) => item.json);\nreturn [{\n  json: {\n    ok: true,\n    created_count: rows.length,\n    task_ids: rows.map((row) => row.public_id || row.id).filter(Boolean),\n    message: 'Internal follow-up tasks created. No email, SMS, or calendar action was performed.',\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        -112
+      ],
+      "id": "80891006-4a8d-4f90-a813-828909bd5abc",
+      "name": "Summarize Created Tasks"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const rows = $input.all().map((item) => item.json);\nconst eligible = rows.filter((row) => row.create_task === true);\nreturn [{\n  json: {\n    ok: true,\n    write_enabled: rows.some((row) => row.write_enabled === true),\n    eligible_count: eligible.length,\n    message: eligible.length\n      ? 'Dry-run only: eligible follow-up tasks were identified but not written.'\n      : (rows[0]?.message || 'No follow-up action required.'),\n    candidates: eligible.map((row) => ({\n      lead_public_id: row.lead_public_id,\n      routing_status: row.routing_status,\n      priority: row.priority,\n      due_at: row.due_at,\n      idempotency_marker: row.idempotency_marker,\n    })),\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        112
+      ],
+      "id": "9a4bef31-b064-4879-829d-010a6e5c9faf",
+      "name": "Dry Run No-op Summary"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Hourly Schedule": {
+      "main": [
+        [
+          {
+            "node": "Safety Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Safety Configuration": {
+      "main": [
+        [
+          {
+            "node": "Fetch Active Hot Warm Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Active Hot Warm Leads": {
+      "main": [
+        [
+          {
+            "node": "Fetch Lead Activities",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Lead Activities": {
+      "main": [
+        [
+          {
+            "node": "Fetch Existing Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Existing Tasks": {
+      "main": [
+        [
+          {
+            "node": "Fetch Pipeline Stages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Pipeline Stages": {
+      "main": [
+        [
+          {
+            "node": "Build Safe Task Candidates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Safe Task Candidates": {
+      "main": [
+        [
+          {
+            "node": "Writes Explicitly Enabled",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Writes Explicitly Enabled": {
+      "main": [
+        [
+          {
+            "node": "Create Internal Follow-up Task",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Dry Run No-op Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Internal Follow-up Task": {
+      "main": [
+        [
+          {
+            "node": "Summarize Created Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Manila",
+    "saveManualExecutions": true
+  },
+  "tags": []
+}
