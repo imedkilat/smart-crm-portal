@@ -13,7 +13,13 @@ create table if not exists public.workspace_branding (
   company_name text not null
     check (char_length(btrim(company_name)) between 1 and 160),
   logo_path text
-    check (logo_path is null or char_length(logo_path) <= 500),
+    check (
+      logo_path is null
+      or (
+        char_length(logo_path) <= 500
+        and logo_path ~* ('^' || workspace_id::text || '/logo[.](png|jpg|jpeg|webp)$')
+      )
+    ),
   primary_color text not null default '#2493F1'
     check (primary_color ~ '^#[0-9A-Fa-f]{6}$'),
   secondary_color text not null default '#0F172A'
@@ -45,7 +51,7 @@ create table if not exists public.workspace_branding (
 comment on table public.workspace_branding is
   'One reusable client identity profile per workspace for UI previews and future outbound communication/chatbot surfaces.';
 comment on column public.workspace_branding.logo_path is
-  'Object path inside the public workspace-brand-assets Storage bucket. Logos are non-sensitive public brand assets.';
+  'Object path inside the public workspace-brand-assets Storage bucket. Must point to the current workspace logo path.';
 comment on column public.workspace_branding.sender_name is
   'Default display name for future outbound templates. This does not itself authorize or send email.';
 comment on column public.workspace_branding.reply_to_email is
