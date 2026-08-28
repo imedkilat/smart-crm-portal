@@ -48,6 +48,24 @@
               "name": "timezone",
               "value": "Asia/Manila",
               "type": "string"
+            },
+            {
+              "id": "0da03f05-5f2d-4c61-b71b-306189a5eb82",
+              "name": "qa_workspace_id",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "f64e0cd0-a273-49b5-9d2f-810136edc2a2",
+              "name": "qa_lead_public_id",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "bde6676a-1ca7-4de2-ad42-392302806c6b",
+              "name": "max_writes_per_run",
+              "value": 1,
+              "type": "number"
             }
           ]
         },
@@ -68,7 +86,7 @@
         "tableId": "leads",
         "returnAll": true,
         "filterType": "string",
-        "filterString": "archived_at=is.null&routing_status=in.(Hot,Warm)&select=id,public_id,workspace_id,name,email,routing_status,pipeline_stage_id,created_at,updated_at"
+        "filterString": "archived_at=is.null&routing_status=in.(Hot,Warm)&select=id,public_id,workspace_id,name,email,routing_status,pipeline_stage_id,created_at,status_changed_at"
       },
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
@@ -140,7 +158,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const config = $('Safety Configuration').first().json;\nconst now = new Date();\nconst dayKey = new Intl.DateTimeFormat('en-CA', {\n  timeZone: config.timezone || 'Asia/Manila',\n  year: 'numeric',\n  month: '2-digit',\n  day: '2-digit',\n}).format(now);\n\nconst leads = $items('Fetch Active Hot Warm Leads')\n  .map((item) => item.json)\n  .filter((lead) => lead.id && lead.workspace_id);\n\nconst activities = $items('Fetch Lead Activities')\n  .map((item) => item.json)\n  .filter((activity) => activity.lead_id && activity.occurred_at);\n\nconst tasks = $items('Fetch Existing Tasks')\n  .map((item) => item.json)\n  .filter((task) => task.lead_id);\n\nconst stages = $items('Fetch Pipeline Stages')\n  .map((item) => item.json)\n  .filter((stage) => stage.id);\n\nconst latestActivityByLead = new Map();\nfor (const activity of activities) {\n  const timestamp = new Date(activity.occurred_at).getTime();\n  const previous = latestActivityByLead.get(activity.lead_id) || 0;\n  if (Number.isFinite(timestamp) && timestamp > previous) {\n    latestActivityByLead.set(activity.lead_id, timestamp);\n  }\n}\n\nconst stageTypeById = new Map(stages.map((stage) => [stage.id, stage.stage_type]));\nconst openTaskLeadIds = new Set(\n  tasks.filter((task) => task.status === 'open').map((task) => task.lead_id),\n);\nconst taskDescriptions = tasks\n  .map((task) => String(task.description || ''))\n  .filter(Boolean);\n\nconst candidates = [];\nfor (const lead of leads) {\n  const stageType = lead.pipeline_stage_id\n    ? stageTypeById.get(lead.pipeline_stage_id)\n    : 'open';\n\n  if (stageType === 'won' || stageType === 'lost') continue;\n  if (openTaskLeadIds.has(lead.id)) continue;\n\n  const thresholdHours = lead.routing_status === 'Hot'\n    ? Number(config.hot_stale_hours || 2)\n    : Number(config.warm_stale_hours || 24);\n\n  const fallbackTouch = new Date(lead.updated_at || lead.created_at || 0).getTime();\n  const lastTouchMs = latestActivityByLead.get(lead.id) || fallbackTouch;\n  if (!Number.isFinite(lastTouchMs)) continue;\n\n  const inactiveHours = (now.getTime() - lastTouchMs) / 3600000;\n  if (inactiveHours < thresholdHours) continue;\n\n  const marker = '[AUTO-FOLLOW-UP:v1:' +\n    lead.public_id + ':' + dayKey + ':' + lead.routing_status + ']';\n\n  if (taskDescriptions.some((description) => description.includes(marker))) {\n    continue;\n  }\n\n  const dueHours = lead.routing_status === 'Hot' ? 2 : 24;\n  const dueAt = new Date(now.getTime() + dueHours * 3600000).toISOString();\n\n  candidates.push({\n    json: {\n      create_task: true,\n      write_enabled: config.write_enabled === true,\n      workspace_id: lead.workspace_id,\n      lead_id: lead.id,\n      lead_public_id: lead.public_id,\n      lead_name: lead.name || lead.email || lead.public_id,\n      routing_status: lead.routing_status,\n      title: 'Follow up with ' + (lead.name || lead.email || lead.public_id),\n      description:\n        'Auto-created by Follow-Up Engine v1. ' +\n        lead.routing_status + ' lead inactive for ' +\n        Math.floor(inactiveHours) + ' hours. ' + marker,\n      priority: lead.routing_status === 'Hot' ? 'high' : 'medium',\n      due_at: dueAt,\n      inactivity_hours: Math.floor(inactiveHours),\n      idempotency_marker: marker,\n    },\n  });\n}\n\nif (candidates.length === 0) {\n  return [{\n    json: {\n      create_task: false,\n      write_enabled: config.write_enabled === true,\n      message: 'No eligible stale Hot or Warm leads found.',\n      scanned_leads: leads.length,\n    },\n  }];\n}\n\nreturn candidates;"
+        "jsCode": "const config = $('Safety Configuration').first().json;\nconst now = new Date();\nconst dayKey = new Intl.DateTimeFormat('en-CA', {\n  timeZone: config.timezone || 'Asia/Manila',\n  year: 'numeric',\n  month: '2-digit',\n  day: '2-digit',\n}).format(now);\n\nconst qaWorkspaceId = String(config.qa_workspace_id || '').trim();\nconst qaLeadPublicId = String(config.qa_lead_public_id || '').trim();\nconst configuredMaxWrites = Number(config.max_writes_per_run || 0);\nconst maxWritesPerRun = Math.min(\n  1,\n  Math.max(0, Number.isFinite(configuredMaxWrites) ? Math.floor(configuredMaxWrites) : 0),\n);\n\nconst leads = $items('Fetch Active Hot Warm Leads')\n  .map((item) => item.json)\n  .filter((lead) => lead.id && lead.workspace_id);\n\nconst activities = $items('Fetch Lead Activities')\n  .map((item) => item.json)\n  .filter((activity) => activity.lead_id && activity.occurred_at);\n\nconst tasks = $items('Fetch Existing Tasks')\n  .map((item) => item.json)\n  .filter((task) => task.lead_id);\n\nconst stages = $items('Fetch Pipeline Stages')\n  .map((item) => item.json)\n  .filter((stage) => stage.id);\n\nconst latestActivityByLead = new Map();\nfor (const activity of activities) {\n  const timestamp = new Date(activity.occurred_at).getTime();\n  const previous = latestActivityByLead.get(activity.lead_id) || 0;\n  if (Number.isFinite(timestamp) && timestamp > previous) {\n    latestActivityByLead.set(activity.lead_id, timestamp);\n  }\n}\n\nconst stageTypeById = new Map(stages.map((stage) => [stage.id, stage.stage_type]));\nconst openTaskLeadIds = new Set(\n  tasks.filter((task) => task.status === 'open').map((task) => task.lead_id),\n);\nconst taskDescriptions = tasks\n  .map((task) => String(task.description || ''))\n  .filter(Boolean);\n\nconst candidates = [];\nfor (const lead of leads) {\n  const stageType = lead.pipeline_stage_id\n    ? stageTypeById.get(lead.pipeline_stage_id)\n    : 'open';\n\n  if (stageType === 'won' || stageType === 'lost') continue;\n  if (openTaskLeadIds.has(lead.id)) continue;\n\n  const thresholdHours = lead.routing_status === 'Hot'\n    ? Number(config.hot_stale_hours || 2)\n    : Number(config.warm_stale_hours || 24);\n\n  const fallbackTouch = new Date(\n    lead.status_changed_at || lead.created_at || 0,\n  ).getTime();\n  const lastTouchMs = latestActivityByLead.get(lead.id) || fallbackTouch;\n  if (!Number.isFinite(lastTouchMs)) continue;\n\n  const inactiveHours = (now.getTime() - lastTouchMs) / 3600000;\n  if (inactiveHours < thresholdHours) continue;\n\n  const marker = '[AUTO-FOLLOW-UP:v1:' +\n    lead.public_id + ':' + dayKey + ':' + lead.routing_status + ']';\n\n  if (taskDescriptions.some((description) => description.includes(marker))) {\n    continue;\n  }\n\n  const dueHours = lead.routing_status === 'Hot' ? 2 : 24;\n  const dueAt = new Date(now.getTime() + dueHours * 3600000).toISOString();\n  const qaAllowed = Boolean(\n    qaWorkspaceId &&\n    qaLeadPublicId &&\n    String(lead.workspace_id) === qaWorkspaceId &&\n    String(lead.public_id) === qaLeadPublicId\n  );\n\n  candidates.push({\n    json: {\n      create_task: true,\n      write_enabled: config.write_enabled === true,\n      write_authorized: false,\n      qa_allowed: qaAllowed,\n      workspace_id: lead.workspace_id,\n      lead_id: lead.id,\n      lead_public_id: lead.public_id,\n      lead_name: lead.name || lead.email || lead.public_id,\n      routing_status: lead.routing_status,\n      title: 'Follow up with ' + (lead.name || lead.email || lead.public_id),\n      description:\n        'Auto-created by Follow-Up Engine v1. ' +\n        lead.routing_status + ' lead inactive for ' +\n        Math.floor(inactiveHours) + ' hours. ' + marker,\n      priority: lead.routing_status === 'Hot' ? 'high' : 'medium',\n      due_at: dueAt,\n      inactivity_hours: Math.floor(inactiveHours),\n      idempotency_marker: marker,\n    },\n  });\n}\n\nif (candidates.length === 0) {\n  return [{\n    json: {\n      create_task: false,\n      write_enabled: config.write_enabled === true,\n      write_authorized: false,\n      qa_allowed: false,\n      allowlist_configured: Boolean(qaWorkspaceId && qaLeadPublicId),\n      max_writes_per_run: maxWritesPerRun,\n      message: 'No eligible stale Hot or Warm leads found.',\n      scanned_leads: leads.length,\n    },\n  }];\n}\n\nlet writesRemaining = maxWritesPerRun;\nfor (const candidate of candidates) {\n  const canWrite = Boolean(\n    config.write_enabled === true &&\n    candidate.json.qa_allowed === true &&\n    writesRemaining > 0\n  );\n  candidate.json.write_authorized = canWrite;\n  candidate.json.allowlist_configured = Boolean(qaWorkspaceId && qaLeadPublicId);\n  candidate.json.max_writes_per_run = maxWritesPerRun;\n\n  if (canWrite) {\n    writesRemaining -= 1;\n  }\n}\n\nreturn candidates;"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -163,7 +181,7 @@
           "conditions": [
             {
               "id": "bf353b7d-4f5a-4790-b376-a642ed4c2236",
-              "leftValue": "={{ $json.create_task === true && $json.write_enabled === true ? 'yes' : 'no' }}",
+              "leftValue": "={{ $json.create_task === true && $json.write_authorized === true ? 'yes' : 'no' }}",
               "rightValue": "yes",
               "operator": {
                 "type": "string",
@@ -183,7 +201,7 @@
         0
       ],
       "id": "8a0210e6-ffdb-4244-97c6-ac050ef01e63",
-      "name": "Writes Explicitly Enabled"
+      "name": "Controlled Write Authorized"
     },
     {
       "parameters": {
@@ -248,7 +266,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const rows = $input.all().map((item) => item.json);\nconst eligible = rows.filter((row) => row.create_task === true);\nreturn [{\n  json: {\n    ok: true,\n    write_enabled: rows.some((row) => row.write_enabled === true),\n    eligible_count: eligible.length,\n    message: eligible.length\n      ? 'Dry-run only: eligible follow-up tasks were identified but not written.'\n      : (rows[0]?.message || 'No follow-up action required.'),\n    candidates: eligible.map((row) => ({\n      lead_public_id: row.lead_public_id,\n      routing_status: row.routing_status,\n      priority: row.priority,\n      due_at: row.due_at,\n      idempotency_marker: row.idempotency_marker,\n    })),\n  },\n}];"
+        "jsCode": "const rows = $input.all().map((item) => item.json);\nconst eligible = rows.filter((row) => row.create_task === true);\nconst writeAuthorized = eligible.filter((row) => row.write_authorized === true);\nreturn [{\n  json: {\n    ok: true,\n    write_enabled: rows.some((row) => row.write_enabled === true),\n    allowlist_configured: rows.some((row) => row.allowlist_configured === true),\n    eligible_count: eligible.length,\n    write_authorized_count: writeAuthorized.length,\n    max_writes_per_run: rows[0]?.max_writes_per_run ?? 0,\n    message: eligible.length\n      ? 'Dry-run only: eligible follow-up tasks were identified but not written unless an exact QA allowlist is configured and controlled writes are enabled.'\n      : (rows[0]?.message || 'No follow-up action required.'),\n    candidates: eligible.map((row) => ({\n      lead_public_id: row.lead_public_id,\n      routing_status: row.routing_status,\n      priority: row.priority,\n      due_at: row.due_at,\n      qa_allowed: row.qa_allowed === true,\n      write_authorized: row.write_authorized === true,\n      idempotency_marker: row.idempotency_marker,\n    })),\n  },\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -332,14 +350,14 @@
       "main": [
         [
           {
-            "node": "Writes Explicitly Enabled",
+            "node": "Controlled Write Authorized",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Writes Explicitly Enabled": {
+    "Controlled Write Authorized": {
       "main": [
         [
           {
