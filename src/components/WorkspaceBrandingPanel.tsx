@@ -92,6 +92,7 @@ export default function WorkspaceBrandingPanel() {
   const brandingClient = supabase as unknown as SupabaseClient<BrandingDatabase> | null
   const [workspaceId, setWorkspaceId] = useState<string | null>(null)
   const [workspaceRole, setWorkspaceRole] = useState<string | null>(null)
+  const [workspaceResolutionError, setWorkspaceResolutionError] = useState<string | null>(null)
   const [draft, setDraft] = useState<BrandDraft>(EMPTY_DRAFT)
   const [logoPath, setLogoPath] = useState<string | null>(null)
   const [schemaReady, setSchemaReady] = useState(true)
@@ -118,6 +119,7 @@ export default function WorkspaceBrandingPanel() {
       setLoading(true)
       setError(null)
       setNotice(null)
+      setWorkspaceResolutionError(null)
 
       const { data: userData, error: userError } = await supabase.auth.getUser()
       const user = userData.user
@@ -133,19 +135,32 @@ export default function WorkspaceBrandingPanel() {
         .select('workspace_id, role')
         .eq('user_id', user.id)
         .order('created_at', { ascending: true })
-        .limit(1)
-        .maybeSingle()
+        .limit(2)
 
       if (!active) return
-      if (membershipResult.error || !membershipResult.data?.workspace_id) {
-        setError(membershipResult.error?.message || 'No workspace membership was found.')
+      if (membershipResult.error) {
+        setError(membershipResult.error.message)
         setLoading(false)
         return
       }
 
-      const nextWorkspaceId = membershipResult.data.workspace_id
+      const memberships = membershipResult.data || []
+      if (memberships.length === 0) {
+        setWorkspaceResolutionError('No workspace membership was found for this account.')
+        setLoading(false)
+        return
+      }
+
+      if (memberships.length > 1) {
+        setWorkspaceResolutionError('This account belongs to multiple workspaces. Choose an active workspace before editing branding. Smart CRM will not guess which tenant you meant.')
+        setLoading(false)
+        return
+      }
+
+      const membership = memberships[0]
+      const nextWorkspaceId = membership.workspace_id
       setWorkspaceId(nextWorkspaceId)
-      setWorkspaceRole(membershipResult.data.role || null)
+      setWorkspaceRole(membership.role || null)
 
       const [workspaceResult, brandingResult] = await Promise.all([
         supabase.from('workspaces').select('name').eq('id', nextWorkspaceId).maybeSingle(),
@@ -281,7 +296,10 @@ export default function WorkspaceBrandingPanel() {
       .single()
 
     setUploadingLogo(false)
-    if (updateResult.error) return setError(updateResult.error.message)
+    if (updateResult.error) {
+      if (previousPath !== nextPath) void supabase.storage.from(BRAND_BUCKET).remove([nextPath])
+      return setError(updateResult.error.message)
+    }
 
     setLogoPath(nextPath)
     setNotice('Logo updated.')
@@ -303,8 +321,12 @@ export default function WorkspaceBrandingPanel() {
     }
 
     setLogoPath(null)
-    await supabase.storage.from(BRAND_BUCKET).remove([previousPath])
+    const removeResult = await supabase.storage.from(BRAND_BUCKET).remove([previousPath])
     setUploadingLogo(false)
+    if (removeResult.error) {
+      setNotice('Logo removed from the brand profile. The old Storage object may need cleanup.')
+      return
+    }
     setNotice('Logo removed.')
   }
 
@@ -320,9 +342,10 @@ export default function WorkspaceBrandingPanel() {
       </div>
 
       {loading && <div className="branding-state">Loading workspace brand profile…</div>}
-      {!loading && !schemaReady && <div className="branding-state pending">Branding source is ready, but the production `workspace_branding` migration has not been rolled out yet. The rest of Settings remains available.</div>}
+      {!loading && workspaceResolutionError && <div className="branding-state pending">{workspaceResolutionError}</div>}
+      {!loading && !workspaceResolutionError && !schemaReady && <div className="branding-state pending">Branding source is ready, but the production `workspace_branding` migration has not been rolled out yet. The rest of Settings remains available.</div>}
 
-      {!loading && schemaReady && (
+      {!loading && !workspaceResolutionError && schemaReady && (
         <div className="branding-grid">
           <div className="branding-form">
             <div className="branding-logo-row">
