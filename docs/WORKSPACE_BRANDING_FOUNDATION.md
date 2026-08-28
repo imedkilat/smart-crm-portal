@@ -32,6 +32,8 @@ RLS model:
 - the system trigger owns row creation
 - `service_role` retains internal access
 
+`logo_path` is also constrained at the database boundary to the current workspace's fixed logo path. An owner/admin cannot point the brand profile at a different tenant's Storage path even though logos themselves are intentionally public assets.
+
 ## Logo storage model
 
 Logos are intentionally **public brand assets**, not private customer data.
@@ -58,6 +60,8 @@ The public bucket means anyone with the final logo URL can retrieve the logo. Th
 
 The UI is read-only for non-admin members. It also handles a source-preview-before-migration state gracefully, and a missing logo bucket does not block saving text/color branding.
 
+The current app does not yet expose an active-workspace switcher. Branding therefore fails closed if an account has more than one workspace membership instead of silently choosing one tenant. A dedicated active-workspace context/switcher should be added before multi-workspace-per-user operation is enabled broadly.
+
 The UI never sends an email.
 
 ## Rollout gate
@@ -75,7 +79,7 @@ Recommended rollout order:
 7. create `workspace-brand-assets` through Studio / Storage API with the restrictions above
 8. test owner/admin upload + replace + delete
 9. test a normal member cannot mutate branding
-10. verify cross-workspace logo writes fail
+10. verify cross-workspace logo writes and cross-workspace `logo_path` references fail
 11. verify Settings remains healthy and preview resolves the public logo URL
 
 ## Next product layers
