@@ -16,6 +16,8 @@ The controlled-QA workflow was intentionally conservative, but it was not yet su
 - read-before-write idempotency that could race under overlapping executions
 - no database constraint tying `lead_tasks.workspace_id` to the referenced lead's workspace
 - no database-level re-check of production entitlement or daily caps at insert time
+- no database-level guard against two overlapping executions creating different open automation keys for the same lead
+- over-broad authenticated table privileges on `lead_tasks` compared with what the frontend actually needs
 
 ## Source files
 
@@ -56,7 +58,7 @@ Existing workspaces are backfilled with disabled rows. A workspace insert trigge
 
 ### Settings access
 
-RLS remains enabled. Workspace members can read the settings row. Only the workspace creator can update it through the authenticated Data API. Anonymous access is revoked. Authenticated UPDATE is column-limited to the actual user-configurable fields; clients cannot create/delete settings rows or edit system columns. The service role retains internal access.
+RLS remains enabled. Workspace members can read their settings row. Workspace members with role `owner` or `admin` can update it through the authenticated Data API. Anonymous access is revoked. Authenticated UPDATE is column-limited to the actual user-configurable fields; clients cannot create/delete settings rows or edit system columns. The service role retains internal access.
 
 ## Plan entitlement
 
@@ -110,7 +112,7 @@ Controlled QA key:
 
 `follow-up:qa:v1:<lead_public_id>:<workspace-local-day>:<routing_status>`
 
-The separate QA namespace matters: a QA task does not consume the paid production daily count, and production mode disables the QA bypass entirely.
+The separate QA namespace matters: database production daily-count enforcement only counts production keys, and production mode disables the QA bypass entirely. The current workflow still retains the legacy description marker for compatibility with the earlier controlled-QA generation; the machine key is the authoritative concurrency/idempotency boundary after this migration.
 
 ## Fair scheduling and global cap
 
@@ -124,13 +126,15 @@ The workflow summary exposes the rotation offset, workspace stats, scoped-worksp
 
 The migration adds nullable `lead_tasks.automation_key` and a unique partial index on `(workspace_id, automation_key)` when the key is non-null. Human tasks keep `automation_key=NULL`.
 
-Authenticated task INSERT/UPDATE grants are narrowed to the human-editable columns used by the existing UI. `automation_key` is therefore machine-only; the service role can set it, normal authenticated clients cannot spoof it.
+A second partial unique index allows at most one **open automated Follow-Up Engine task per workspace + lead**, regardless of day/status key. This closes the overlap edge where two executions could race with different keys for the same lead.
+
+Authenticated `lead_tasks` privileges are reset to explicit least privilege: normal clients retain `SELECT`, `DELETE`, and column-limited human `INSERT`/`UPDATE`; `automation_key`, `TRUNCATE`, `TRIGGER`, and other machine/admin-only capabilities are not granted. The service role retains internal access.
 
 The migration also adds a composite foreign key:
 
 `lead_tasks(workspace_id, lead_id) -> leads(workspace_id, id)`
 
-This prevents a task from referencing a lead in another tenant even if a caller supplies individually valid IDs. Production was checked before drafting this migration and had zero existing task/lead workspace mismatches.
+This prevents a task from referencing a lead in another tenant even if a caller supplies individually valid IDs. Production was checked before drafting this migration and had zero existing task/lead workspace mismatches and zero duplicate open legacy auto-follow-up tasks.
 
 ## Transactional production insert guard
 
@@ -146,7 +150,7 @@ For machine keys it:
 - for production keys, rechecks workspace settings, pause state, Starter+ entitlement, and workspace-local daily count
 - rejects an insert once `max_tasks_per_day` is reached
 
-The advisory transaction lock serializes automated inserts for the same workspace. Combined with the unique automation key, two overlapping scheduler executions cannot both race through duplicate or daily-cap protection.
+The advisory transaction lock serializes automated inserts for the same workspace. Combined with the unique automation key and one-open-auto-task-per-lead constraint, overlapping scheduler executions fail closed instead of creating duplicate or conflicting follow-up tasks.
 
 ## Shadow-mode gate
 
@@ -195,16 +199,18 @@ Do not treat merging source as permission to change production. Migration/runtim
 2. apply the migration through the normal Supabase migration workflow
 3. run Supabase security and performance advisors
 4. verify one disabled settings row per workspace
-5. confirm existing human task create/update UI paths still work
-6. confirm authenticated clients cannot set `automation_key`
-7. confirm the composite tenant FK is validated
-8. import/update the hardened n8n workflow
-9. reconnect the existing Smart CRM Supabase credential on every Supabase node
-10. keep the workflow inactive/unpublished
-11. run shadow mode
-12. only after another approval, run a bounded production-mode write test
-13. restore writes OFF
-14. publish/activate the hourly schedule only under a separate explicit activation approval
+5. verify owner/admin settings updates and ordinary-member read-only behavior
+6. confirm existing human task create/update/delete UI paths still work
+7. confirm authenticated clients cannot set `automation_key` and no longer hold unnecessary task-table admin privileges
+8. confirm the composite tenant FK is validated
+9. confirm the one-open-automated-task-per-lead index is present
+10. import/update the hardened n8n workflow
+11. reconnect the existing Smart CRM Supabase credential on every Supabase node
+12. keep the workflow inactive/unpublished
+13. run shadow mode
+14. only after another approval, run a bounded production-mode write test
+15. restore writes OFF
+16. publish/activate the hourly schedule only under a separate explicit activation approval
 
 ## Non-goals
 
