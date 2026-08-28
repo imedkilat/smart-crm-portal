@@ -122,7 +122,6 @@ grant insert (
   is_default
 ) on table public.message_templates to authenticated;
 grant update (
-  template_key,
   name,
   purpose,
   subject_template,
@@ -132,6 +131,44 @@ grant update (
   is_default
 ) on table public.message_templates to authenticated;
 grant all on table public.message_templates to service_role;
+
+create or replace function private.normalize_message_template_default()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if new.is_default then
+    perform pg_advisory_xact_lock(
+      hashtextextended(
+        new.workspace_id::text || ':' || new.channel || ':' || new.purpose,
+        0
+      )
+    );
+
+    update public.message_templates
+    set is_default = false
+    where workspace_id = new.workspace_id
+      and channel = new.channel
+      and purpose = new.purpose
+      and is_default
+      and id <> new.id;
+  end if;
+
+  return new;
+end;
+$$;
+
+revoke all on function private.normalize_message_template_default() from public;
+revoke all on function private.normalize_message_template_default() from anon;
+revoke all on function private.normalize_message_template_default() from authenticated;
+
+drop trigger if exists trg_message_templates_default
+  on public.message_templates;
+create trigger trg_message_templates_default
+before insert or update of is_default, purpose
+on public.message_templates
+for each row execute function private.normalize_message_template_default();
 
 create or replace function private.bump_message_template_revision()
 returns trigger
