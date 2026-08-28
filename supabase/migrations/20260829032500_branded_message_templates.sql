@@ -40,6 +40,8 @@ create table if not exists public.message_templates (
 
 comment on table public.message_templates is
   'Workspace-scoped plain-text message templates. Rendering is deterministic and outbound delivery is handled by a separate future layer.';
+comment on column public.message_templates.template_key is
+  'Stable machine identifier for future automation references. Immutable after insert.';
 comment on column public.message_templates.subject_template is
   'Plain-text email subject template. HTML is not accepted by the template editor.';
 comment on column public.message_templates.body_template is
@@ -98,18 +100,10 @@ with check (
   ))
 );
 
+-- Hard delete is intentionally unavailable in v1. Templates can be disabled.
+-- This preserves stable automation references until a recovery/history UX exists.
 drop policy if exists message_templates_admin_delete
   on public.message_templates;
-create policy message_templates_admin_delete
-on public.message_templates
-for delete
-to authenticated
-using (
-  (select private.is_workspace_member(
-    message_templates.workspace_id,
-    array['owner'::text, 'admin'::text]
-  ))
-);
 
 revoke all on table public.message_templates from anon;
 revoke all on table public.message_templates from authenticated;
@@ -137,7 +131,6 @@ grant update (
   is_enabled,
   is_default
 ) on table public.message_templates to authenticated;
-grant delete on table public.message_templates to authenticated;
 grant all on table public.message_templates to service_role;
 
 create or replace function private.bump_message_template_revision()
@@ -146,6 +139,11 @@ language plpgsql
 set search_path = ''
 as $$
 begin
+  if new.template_key is distinct from old.template_key then
+    raise exception 'message template key is immutable'
+      using errcode = '22023';
+  end if;
+
   new.version := old.version + 1;
   new.updated_at := now();
   new.updated_by := auth.uid();
