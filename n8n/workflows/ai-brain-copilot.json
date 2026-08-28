@@ -1,0 +1,939 @@
+{
+  "name": "Smart CRM Portal - AI Brain Copilot",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "smart-crm-ai-copilot",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "fc7bcd65-28e6-4765-8259-62ff31934d3a",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -400,
+        -32
+      ],
+      "webhookId": "dce01abd-2003-4353-89cd-ba4f61cb0196",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "zdV5E5PTMg4rXwqs",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json || {};\nconst body = item.body || {};\nconst required = ['question', 'conversation_id', 'request_id', 'workspace_id', 'user_id', 'scope_type'];\nconst missing = [];\nfor (const key of required) {\n  const v = body[key];\n  if (v === undefined || v === null || (typeof v === 'string' && v.trim() === '')) {\n    missing.push(key);\n  }\n}\n// workspace_id must ONLY come from the webhook body — never from anywhere else.\nconst valid = missing.length === 0;\nreturn [{ json: { valid, missing, body } }];"
+      },
+      "id": "1205a3ab-49fb-44c0-872a-e75014c6e937",
+      "name": "Validate Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -128,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "valid-check",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "deac70e9-4cae-44c1-85bd-62e411f94f16",
+      "name": "Is Valid Request?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        96,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "leads",
+        "returnAll": true,
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "workspace_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Validate Request').item.json.body.workspace_id }}"
+            },
+            {
+              "keyName": "archived_at",
+              "condition": "is",
+              "keyValue": "null"
+            }
+          ]
+        }
+      },
+      "id": "4ddb3d73-d99c-4d6b-a5cd-70962d1b45d6",
+      "name": "Get Active Workspace Leads",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        896,
+        272
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "OEZuUDRlC3aAzrrX",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "lead_tasks",
+        "limit": 100,
+        "orderBy": "created_at.desc",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "workspace_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Validate Request').item.json.body.workspace_id }}"
+            }
+          ]
+        }
+      },
+      "id": "37ea019e-9751-4973-8068-535e4a2e27e6",
+      "name": "Get Workspace Tasks",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        480,
+        80
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "OEZuUDRlC3aAzrrX",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "pipeline_stages",
+        "returnAll": true,
+        "orderBy": "position.asc",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "workspace_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Validate Request').item.json.body.workspace_id }}"
+            }
+          ]
+        }
+      },
+      "id": "61c7c244-94ba-474f-b9d1-1a24f7177750",
+      "name": "Get Pipeline Stages",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        704,
+        80
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "OEZuUDRlC3aAzrrX",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "pipelines",
+        "returnAll": true,
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "workspace_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Validate Request').item.json.body.workspace_id }}"
+            }
+          ]
+        }
+      },
+      "id": "64bb6728-8925-4c59-ab2d-a2c25c261678",
+      "name": "Get Pipelines",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        896,
+        80
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "OEZuUDRlC3aAzrrX",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "weekly_summary",
+        "limit": 1,
+        "orderBy": "created_at.desc",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "workspace_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Validate Request').item.json.body.workspace_id }}"
+            }
+          ]
+        }
+      },
+      "id": "edfde6ce-fd69-4bbf-9269-a40c05830af8",
+      "name": "Get Latest Weekly Report",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        80
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "OEZuUDRlC3aAzrrX",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "insights",
+        "limit": 1,
+        "orderBy": "created_at.desc",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "workspace_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Validate Request').item.json.body.workspace_id }}"
+            }
+          ]
+        }
+      },
+      "id": "b9a64aac-ab77-4c97-99a7-7a59e0695ce0",
+      "name": "Get Latest Insight",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1344,
+        80
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "OEZuUDRlC3aAzrrX",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const LF = String.fromCharCode(10);\nconst body = $('Validate Request').first().json.body || {};\n\nfunction rows(nodeName) {\n  let out = [];\n  try {\n    out = $(nodeName).all();\n  } catch (e) {\n    out = [];\n  }\n  return out\n    .map(i => (i && i.json) ? i.json : {})\n    .filter(r => r && Object.keys(r).length > 0);\n}\n\nconst leadRows = rows('Get Active Workspace Leads').filter(r => r.id || r.public_id);\nconst taskRows = rows('Get Workspace Tasks').filter(r => r.public_id || r.id || r.lead_id);\nconst stageRows = rows('Get Pipeline Stages').filter(r => r.id || r.name);\nconst pipelineRows = rows('Get Pipelines').filter(r => r.id || r.name);\nconst weeklyRows = rows('Get Latest Weekly Report');\nconst insightRows = rows('Get Latest Insight');\nconst memoryRows = rows('Get Active Memories').filter(r => r.content || r.id);\n\nfunction temp(l) {\n  const s = String(l.category || '').toLowerCase();\n  return (s === 'hot' || s === 'warm' || s === 'cold') ? s : null;\n}\nlet hot = 0, warm = 0, cold = 0, unclassified = 0;\nfor (const l of leadRows) {\n  const t = temp(l);\n  if (t === 'hot') hot++;\n  else if (t === 'warm') warm++;\n  else if (t === 'cold') cold++;\n  else unclassified++;\n}\n\nconst leads = leadRows.map(l => ({\n  id: l.id ?? null,\n  public_id: l.public_id ?? null,\n  name: l.name ?? l.full_name ?? null,\n  budget: l.budget ?? null,\n  currency_code: l.currency_code ?? null,\n  category: l.category ?? null,\n  intent: l.intent ?? null,\n  routing_status: l.routing_status ?? null,\n  pipeline_stage_id: l.pipeline_stage_id ?? null,\n  created_at: l.created_at ?? null,\n}));\n\nconst tasks = taskRows.map(t => ({\n  public_id: t.public_id ?? null,\n  lead_id: t.lead_id ?? null,\n  title: t.title ?? null,\n  status: t.status ?? null,\n  priority: t.priority ?? null,\n  due_at: t.due_at ?? null,\n  completed_at: t.completed_at ?? null,\n}));\n\nconst stages = stageRows.map(s => ({\n  id: s.id ?? null,\n  name: s.name ?? null,\n  position: s.position ?? null,\n  stage_type: s.stage_type ?? null,\n}));\n\nconst pipelines = pipelineRows.map(p => ({\n  id: p.id ?? null,\n  name: p.name ?? null,\n  is_default: p.is_default ?? null,\n}));\n\nlet weekly = null;\nif (weeklyRows.length) {\n  const w = weeklyRows[0];\n  weekly = {\n    id: w.id ?? null,\n    created_at: w.created_at ?? null,\n    period_start: w.period_start ?? null,\n    period_end: w.period_end ?? null,\n    total_leads: w.total_leads ?? null,\n    total_tasks: w.total_tasks ?? null,\n    totals: w.totals ?? null,\n    changes: w.changes ?? null,\n    ai_summary: w.ai_summary ?? w.summary ?? null,\n  };\n}\n\nlet insight = null;\nif (insightRows.length) {\n  const n = insightRows[0];\n  const bullets = [n.insight_1, n.insight_2, n.insight_3].filter(Boolean);\n  const recs = [n.recommendation_1, n.recommendation_2, n.recommendation_3].filter(Boolean);\n  insight = {\n    id: n.id ?? null,\n    created_at: n.created_at ?? null,\n    text: bullets.length ? bullets.join(' ') : (n.ai_commentary ?? null),\n    recommendations: recs.length ? recs : null,\n  };\n}\n\nconst memories = memoryRows.slice(0, 12).map(m => ({\n  content: m.content ?? null,\n  memory_type: m.memory_type ?? null,\n  scope_type: m.scope_type ?? null,\n  scope_key: m.scope_key ?? null,\n  confidence: m.confidence ?? null,\n  similarity: m.similarity ?? null,\n}));\n\nconst counts = {\n  leads: leads.length,\n  tasks: tasks.length,\n  stages: stages.length,\n  pipelines: pipelines.length,\n  memories: memories.length,\n  weekly_report: weekly ? 1 : 0,\n  insight: insight ? 1 : 0,\n  lead_temperature: { hot, warm, cold, unclassified },\n};\n\nconst context = {\n  workspace_id: body.workspace_id,\n  counts,\n  leads,\n  tasks,\n  stages,\n  pipelines,\n  weekly_report: weekly,\n  insight,\n  memories,\n};\n\nconst instructions = [\n  'You are the Smart CRM AI Brain, a copilot for a single CRM workspace.',\n  'Answer ONLY from the JSON CRM CONTEXT below. It is scoped to the current workspace and is the sole source of truth.',\n  'Distinguish clearly between AI lead QUALITY (Hot/Warm/Cold, from lead_temperature and intent) and the SALES PIPELINE STAGE (pipeline_stage_id / stages). They are different concepts — never conflate them.',\n  'Never invent counts, names, numbers, or facts. Use only values present in the context. The counts object is authoritative for totals.',\n  'If tasks, weekly_report, insight, or memories are empty or null, say so honestly instead of guessing.',\n  'If the user asks for data that is not present in this CRM context, state plainly that it is outside the available CRM context.',\n  'memories are ranked by semantic similarity to the question (see similarity, 0-1). Treat them as secondary background; current CRM data (leads, tasks, stages, pipelines) takes precedence whenever they conflict.',\n  'Do not expose internal UUIDs (id fields) unless the user explicitly asks for them; refer to records by name or public_id.',\n  'Give concise, actionable answers.',\n].join(LF);\n\nconst prompt = instructions + LF + LF + 'CRM CONTEXT (JSON):' + LF + JSON.stringify(context, null, 2) + LF + LF + 'User question: ' + (body.question || '');\n\nconst contextSnapshot = {\n  counts,\n  sources: {\n    leads: leads.length,\n    tasks: tasks.length,\n    stages: stages.length,\n    pipelines: pipelines.length,\n    memories: memories.length,\n    weekly_report_id: weekly ? weekly.id : null,\n    weekly_report_created_at: weekly ? weekly.created_at : null,\n    latest_insight_id: insight ? insight.id : null,\n    latest_insight_created_at: insight ? insight.created_at : null,\n  },\n  scope_type: body.scope_type ?? null,\n  scope_key: body.scope_key ?? null,\n  generated_at: new Date().toISOString(),\n};\n\nreturn [{ json: {\n  prompt,\n  question: body.question,\n  conversation_id: body.conversation_id,\n  workspace_id: body.workspace_id,\n  user_id: body.user_id,\n  model: 'gemini-2.5-flash',\n  context_snapshot: JSON.stringify(contextSnapshot),\n} }]"
+      },
+      "id": "50632d09-97f4-40c8-b5f8-504fc1b7e14b",
+      "name": "Build Grounded CRM Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        -48
+      ],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.prompt }}",
+        "batching": {}
+      },
+      "id": "c886f2d6-c422-408b-ad32-58052d353741",
+      "name": "Generate AI Answer",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        1264,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-2.5-flash",
+        "options": {
+          "temperature": 0.2
+        }
+      },
+      "id": "a7af539c-df4f-4d19-9547-e6b705539170",
+      "name": "Google Gemini Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        1296,
+        208
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "7e66E4T3wvo3ayA4",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "tableId": "ai_interactions",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "workspace_id",
+              "fieldValue": "={{ $('Build Grounded CRM Prompt').item.json.workspace_id }}"
+            },
+            {
+              "fieldId": "user_id",
+              "fieldValue": "={{ $('Build Grounded CRM Prompt').item.json.user_id }}"
+            },
+            {
+              "fieldId": "conversation_id",
+              "fieldValue": "={{ $('Build Grounded CRM Prompt').item.json.conversation_id }}"
+            },
+            {
+              "fieldId": "question",
+              "fieldValue": "={{ $('Build Grounded CRM Prompt').item.json.question }}"
+            },
+            {
+              "fieldId": "answer",
+              "fieldValue": "={{ $json.text }}"
+            },
+            {
+              "fieldId": "model",
+              "fieldValue": "={{ $('Build Grounded CRM Prompt').item.json.model }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "completed"
+            },
+            {
+              "fieldId": "context_snapshot",
+              "fieldValue": "={{ $('Build Grounded CRM Prompt').item.json.context_snapshot }}"
+            },
+            {
+              "fieldId": "completed_at",
+              "fieldValue": "={{ $now.toISO() }}"
+            },
+            {
+              "fieldId": "n8n_execution_id",
+              "fieldValue": "={{ $execution.id }}"
+            }
+          ]
+        }
+      },
+      "id": "5f1627a9-a9a1-461d-88c1-5e58c4fa441a",
+      "name": "Save AI Interaction",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1696,
+        -48
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "OEZuUDRlC3aAzrrX",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"answer\": $('Generate AI Answer').item.json.text, \"conversation_id\": $('Build Grounded CRM Prompt').item.json.conversation_id, \"interaction_id\": $json.public_id, \"model\": $('Build Grounded CRM Prompt').item.json.model, \"status\": \"completed\" } }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "42337c88-0d70-4c16-91bf-e494366782f2",
+      "name": "Respond Success (200)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1920,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"invalid_request\", \"error\": \"Request is missing required fields.\", \"missing_fields\": $json.missing } }}",
+        "options": {
+          "responseCode": 422,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "64ae8dab-c2a9-4fce-8352-7b3196e7380d",
+      "name": "Respond Invalid (422)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        448,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { content: { parts: [ { text: $('Validate Request').item.json.body.question } ] }, taskType: 'RETRIEVAL_QUERY', outputDimensionality: 768 } }}",
+        "options": {}
+      },
+      "id": "d4ea3c0e-48d7-46c3-b4c0-2798a900b3e0",
+      "name": "Generate Question Embedding",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1536,
+        80
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "7e66E4T3wvo3ayA4",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://updpvuhtsqhpaylegrbz.supabase.co/rest/v1/rpc/match_ai_memories",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { p_workspace_id: $('Validate Request').item.json.body.workspace_id, p_query_embedding: '[' + $json.embedding.values.join(',') + ']', p_match_count: 12, p_scope_type: $('Validate Request').item.json.body.scope_type || null, p_scope_key: $('Validate Request').item.json.body.scope_key || null } }}",
+        "options": {}
+      },
+      "id": "b64db163-b07a-498c-8aaf-96db568e4de7",
+      "name": "Get Active Memories",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1728,
+        80
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "OEZuUDRlC3aAzrrX",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ 'Question: ' + $('Build Grounded CRM Prompt').item.json.question + String.fromCharCode(10,10) + 'Answer: ' + $('Generate AI Answer').item.json.text + String.fromCharCode(10,10) + 'Decide if this exchange reveals a durable fact, preference, correction, outcome, or pattern about this CRM workspace worth remembering for future conversations. Do NOT save generic CRM data already stored in the database (lead counts, names, dates) — only save workspace-level knowledge not already an explicit CRM field. If nothing durable was learned, set should_save to false.' + String.fromCharCode(10,10) + 'Respond with ONLY a JSON object, no markdown, no code fences, in this exact shape: {\"should_save\": boolean, \"memory_type\": \"fact\"|\"preference\"|\"correction\"|\"outcome\"|\"pattern\", \"content\": string, \"confidence\": number between 0 and 1}' }}",
+        "batching": {}
+      },
+      "id": "b2871604-5e39-465e-8cf3-9cc0ede661e2",
+      "name": "Extract Memory Candidate",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        1696,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = ($input.first().json.text || $input.first().json.output || '').toString();\nlet parsed = { should_save: false };\ntry {\n  const cleaned = raw.trim().replace(/^```json/i, '').replace(/^```/, '').replace(/```$/, '').trim();\n  parsed = JSON.parse(cleaned);\n} catch (e) {\n  parsed = { should_save: false, error: 'parse_failed', raw };\n}\nreturn [{ json: parsed }];"
+      },
+      "id": "c1ea66de-a822-4607-839a-f01fccdf96be",
+      "name": "Parse Memory Candidate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2016,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "should-save-check",
+              "leftValue": "={{ $json.should_save }}",
+              "operator": {
+                "operation": "true",
+                "singleValue": true,
+                "type": "boolean"
+              },
+              "rightValue": true
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          }
+        },
+        "options": {}
+      },
+      "id": "f61955bb-ab12-44c9-9dd9-126c765d5601",
+      "name": "Should Save Memory?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2240,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { content: { parts: [ { text: $json.content } ] }, taskType: 'RETRIEVAL_DOCUMENT', outputDimensionality: 768 } }}",
+        "options": {}
+      },
+      "id": "993ed221-0b01-4071-83b2-0f5c662d3e02",
+      "name": "Generate Memory Embedding",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        2496,
+        176
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "7e66E4T3wvo3ayA4",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "tableId": "ai_memories",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "workspace_id",
+              "fieldValue": "={{ $('Validate Request').item.json.body.workspace_id }}"
+            },
+            {
+              "fieldId": "scope_type",
+              "fieldValue": "={{ $('Validate Request').item.json.body.scope_type || 'workspace' }}"
+            },
+            {
+              "fieldId": "scope_key",
+              "fieldValue": "={{ $('Validate Request').item.json.body.scope_key || null }}"
+            },
+            {
+              "fieldId": "memory_type",
+              "fieldValue": "={{ $('Parse Memory Candidate').item.json.memory_type }}"
+            },
+            {
+              "fieldId": "content",
+              "fieldValue": "={{ $('Parse Memory Candidate').item.json.content }}"
+            },
+            {
+              "fieldId": "confidence",
+              "fieldValue": "={{ $('Parse Memory Candidate').item.json.confidence }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "candidate"
+            },
+            {
+              "fieldId": "source_interaction_id",
+              "fieldValue": "={{ $('Save AI Interaction').item.json.id }}"
+            },
+            {
+              "fieldId": "embedding",
+              "fieldValue": "={{ '[' + $json.embedding.values.join(',') + ']' }}"
+            },
+            {
+              "fieldId": "created_by",
+              "fieldValue": "={{ $('Validate Request').item.json.body.user_id }}"
+            }
+          ]
+        }
+      },
+      "id": "c862ac0e-0378-45c8-9c3b-0cb8b438a0e5",
+      "name": "Save Candidate Memory",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2720,
+        176
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "OEZuUDRlC3aAzrrX",
+          "name": "Supabase account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Request": {
+      "main": [
+        [
+          {
+            "node": "Is Valid Request?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Valid Request?": {
+      "main": [
+        [
+          {
+            "node": "Get Active Workspace Leads",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Invalid (422)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Active Workspace Leads": {
+      "main": [
+        [
+          {
+            "node": "Get Workspace Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Workspace Tasks": {
+      "main": [
+        [
+          {
+            "node": "Get Pipeline Stages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Pipeline Stages": {
+      "main": [
+        [
+          {
+            "node": "Get Pipelines",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Pipelines": {
+      "main": [
+        [
+          {
+            "node": "Get Latest Weekly Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Latest Weekly Report": {
+      "main": [
+        [
+          {
+            "node": "Get Latest Insight",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Grounded CRM Prompt": {
+      "main": [
+        [
+          {
+            "node": "Generate AI Answer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate AI Answer": {
+      "main": [
+        [
+          {
+            "node": "Save AI Interaction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Generate AI Answer",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Extract Memory Candidate",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save AI Interaction": {
+      "main": [
+        [
+          {
+            "node": "Respond Success (200)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Extract Memory Candidate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Latest Insight": {
+      "main": [
+        [
+          {
+            "node": "Generate Question Embedding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Question Embedding": {
+      "main": [
+        [
+          {
+            "node": "Get Active Memories",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Active Memories": {
+      "main": [
+        [
+          {
+            "node": "Build Grounded CRM Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Memory Candidate": {
+      "main": [
+        [
+          {
+            "node": "Parse Memory Candidate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Memory Candidate": {
+      "main": [
+        [
+          {
+            "node": "Should Save Memory?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Save Memory?": {
+      "main": [
+        [
+          {
+            "node": "Generate Memory Embedding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Memory Embedding": {
+      "main": [
+        [
+          {
+            "node": "Save Candidate Memory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": true
+  },
+  "versionId": "3716464d-6ea4-46de-9c54-732a8d9c8a8e",
+  "meta": {
+    "aiBuilderAssisted": true,
+    "builderVariant": "mcp",
+    "instanceId": "6e141d857ee29108e1eda21f502bb9481f8bdb0a416f89f9d6fc73d8b79e9915"
+  },
+  "nodeGroups": [
+    {
+      "id": "1b04dd00-716a-46b8-b911-5e72a9f79153",
+      "name": "Validation",
+      "nodeIds": [
+        "1205a3ab-49fb-44c0-872a-e75014c6e937",
+        "deac70e9-4cae-44c1-85bd-62e411f94f16"
+      ],
+      "description": "Validates the authenticated webhook body and routes invalid requests to a 422 response."
+    },
+    {
+      "id": "b41393b9-305f-4324-8659-9d5099263d02",
+      "name": "CRM Context",
+      "nodeIds": [
+        "4ddb3d73-d99c-4d6b-a5cd-70962d1b45d6",
+        "37ea019e-9751-4973-8068-535e4a2e27e6",
+        "61c7c244-94ba-474f-b9d1-1a24f7177750",
+        "64bb6728-8925-4c59-ab2d-a2c25c261678",
+        "edfde6ce-fd69-4bbf-9269-a40c05830af8",
+        "b9a64aac-ab77-4c97-99a7-7a59e0695ce0",
+        "d4ea3c0e-48d7-46c3-b4c0-2798a900b3e0",
+        "b64db163-b07a-498c-8aaf-96db568e4de7"
+      ],
+      "description": "Reads workspace leads, tasks, stages, pipelines, weekly report, latest insight, and semantically-matched memories."
+    },
+    {
+      "id": "703fc937-0ae0-4075-9451-9bef6fb3b7d0",
+      "name": "AI & Persist",
+      "nodeIds": [
+        "50632d09-97f4-40c8-b5f8-504fc1b7e14b",
+        "c886f2d6-c422-408b-ad32-58052d353741",
+        "a7af539c-df4f-4d19-9547-e6b705539170",
+        "5f1627a9-a9a1-461d-88c1-5e58c4fa441a",
+        "42337c88-0d70-4c16-91bf-e494366782f2",
+        "b2871604-5e39-465e-8cf3-9cc0ede661e2",
+        "c1ea66de-a822-4607-839a-f01fccdf96be",
+        "f61955bb-ab12-44c9-9dd9-126c765d5601",
+        "993ed221-0b01-4071-83b2-0f5c662d3e02",
+        "c862ac0e-0378-45c8-9c3b-0cb8b438a0e5"
+      ],
+      "description": "Builds prompt, generates the AI answer, logs it, responds to webhook, then extracts and saves any durable memory learned."
+    }
+  ],
+  "id": "yxdHTciOEW45qdye",
+  "tags": []
+}
