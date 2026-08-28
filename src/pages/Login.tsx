@@ -1,8 +1,8 @@
 import { useState, type FormEvent } from 'react'
-import { sendPasswordReset, signIn } from '../lib/auth'
+import { sendPasswordReset, signIn, signUp } from '../lib/auth'
 import '../auth.css'
 
-type View = 'signin' | 'reset' | 'sent'
+type View = 'signin' | 'signup' | 'signup-sent' | 'reset' | 'sent'
 
 const steps = [
   ['01', 'Lead captured', 'Forms, uploads, manual intake'],
@@ -17,17 +17,35 @@ function emailProblem(value: string) {
   return ''
 }
 
+function passwordProblem(value: string) {
+  if (!value) return 'Enter a password.'
+  if (value.length < 8) return 'Use at least 8 characters.'
+  return ''
+}
+
+function workspaceProblem(value: string) {
+  const trimmed = value.trim()
+  if (trimmed.length < 2) return 'Enter a workspace name with at least 2 characters.'
+  if (trimmed.length > 100) return 'Keep the workspace name to 100 characters or fewer.'
+  return ''
+}
+
 export default function Login({ onSignedIn }: { onSignedIn?: () => void }) {
   const [view, setView] = useState<View>('signin')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [workspaceName, setWorkspaceName] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [resetEmail, setResetEmail] = useState('')
   const [sentTo, setSentTo] = useState('')
+  const [createdWorkspaceName, setCreatedWorkspaceName] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [emailError, setEmailError] = useState('')
   const [passwordError, setPasswordError] = useState('')
+  const [confirmPasswordError, setConfirmPasswordError] = useState('')
+  const [workspaceError, setWorkspaceError] = useState('')
 
   async function handleSignIn(event: FormEvent) {
     event.preventDefault()
@@ -46,6 +64,42 @@ export default function Login({ onSignedIn }: { onSignedIn?: () => void }) {
 
     if (!result.ok) {
       setError(result.message)
+      return
+    }
+
+    onSignedIn?.()
+  }
+
+  async function handleSignUp(event: FormEvent) {
+    event.preventDefault()
+    const nextWorkspaceError = workspaceProblem(workspaceName)
+    const nextEmailError = emailProblem(email)
+    const nextPasswordError = passwordProblem(password)
+    const nextConfirmError = confirmPassword === password ? '' : 'Passwords do not match.'
+
+    setWorkspaceError(nextWorkspaceError)
+    setEmailError(nextEmailError)
+    setPasswordError(nextPasswordError)
+    setConfirmPasswordError(nextConfirmError)
+    setError('')
+
+    if (nextWorkspaceError || nextEmailError || nextPasswordError || nextConfirmError) return
+
+    setSubmitting(true)
+    const result = await signUp(email, password, workspaceName)
+    setSubmitting(false)
+
+    if (!result.ok) {
+      setError(result.message)
+      return
+    }
+
+    if (result.confirmationRequired) {
+      setSentTo(email.trim())
+      setCreatedWorkspaceName(workspaceName.trim())
+      setPassword('')
+      setConfirmPassword('')
+      setView('signup-sent')
       return
     }
 
@@ -73,18 +127,32 @@ export default function Login({ onSignedIn }: { onSignedIn?: () => void }) {
     setView('sent')
   }
 
-  function openReset() {
-    setResetEmail(email)
-    setEmailError('')
-    setError('')
-    setView('reset')
-  }
-
-  function backToSignIn() {
-    setView('signin')
+  function clearValidation() {
     setError('')
     setEmailError('')
     setPasswordError('')
+    setConfirmPasswordError('')
+    setWorkspaceError('')
+  }
+
+  function openReset() {
+    setResetEmail(email)
+    clearValidation()
+    setView('reset')
+  }
+
+  function openSignUp() {
+    clearValidation()
+    setPassword('')
+    setConfirmPassword('')
+    setView('signup')
+  }
+
+  function backToSignIn() {
+    clearValidation()
+    setPassword('')
+    setConfirmPassword('')
+    setView('signin')
   }
 
   return (
@@ -220,8 +288,124 @@ export default function Login({ onSignedIn }: { onSignedIn?: () => void }) {
                 </button>
               </form>
 
-              <p className="auth-invite-note">Workspace access is invite-only for this build.</p>
+              <p className="auth-invite-note">
+                New to Smart CRM? <button className="auth-link" type="button" onClick={openSignUp}>Create your workspace</button>
+              </p>
             </>
+          )}
+
+          {view === 'signup' && (
+            <>
+              <button className="auth-back" type="button" onClick={backToSignIn}>← Back to sign in</button>
+              <span className="auth-form-kicker">CREATE WORKSPACE</span>
+              <h2>Start your Smart CRM</h2>
+              <p className="auth-subtitle">Create an account and we&apos;ll prepare your first sales workspace automatically.</p>
+
+              <div className="auth-info-box">Starts on the Free plan. Your workspace, owner access, and default sales pipeline are created automatically after authentication.</div>
+              {error && <div className="auth-error" role="alert">{error}</div>}
+
+              <form className="auth-form" onSubmit={handleSignUp} noValidate>
+                <label className="auth-field">
+                  <span>Workspace name</span>
+                  <input
+                    type="text"
+                    autoComplete="organization"
+                    placeholder="e.g. Kilat Automation"
+                    value={workspaceName}
+                    className={workspaceError ? 'invalid' : ''}
+                    onChange={(event) => {
+                      setWorkspaceName(event.target.value)
+                      setWorkspaceError('')
+                      setError('')
+                    }}
+                  />
+                  {workspaceError && <small>{workspaceError}</small>}
+                </label>
+
+                <label className="auth-field">
+                  <span>Email address</span>
+                  <input
+                    type="email"
+                    autoComplete="email"
+                    placeholder="you@company.com"
+                    value={email}
+                    className={emailError ? 'invalid' : ''}
+                    onChange={(event) => {
+                      setEmail(event.target.value)
+                      setEmailError('')
+                      setError('')
+                    }}
+                  />
+                  {emailError && <small>{emailError}</small>}
+                </label>
+
+                <label className="auth-field">
+                  <span>Password</span>
+                  <div className="auth-password-wrap">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      autoComplete="new-password"
+                      placeholder="At least 8 characters"
+                      value={password}
+                      className={passwordError ? 'invalid' : ''}
+                      onChange={(event) => {
+                        setPassword(event.target.value)
+                        setPasswordError('')
+                        setConfirmPasswordError('')
+                        setError('')
+                      }}
+                    />
+                    <button
+                      className="auth-password-toggle"
+                      type="button"
+                      onClick={() => setShowPassword((value) => !value)}
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showPassword ? <EyeOffIcon /> : <EyeIcon />}
+                    </button>
+                  </div>
+                  {passwordError && <small>{passwordError}</small>}
+                </label>
+
+                <label className="auth-field">
+                  <span>Confirm password</span>
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    autoComplete="new-password"
+                    placeholder="Repeat your password"
+                    value={confirmPassword}
+                    className={confirmPasswordError ? 'invalid' : ''}
+                    onChange={(event) => {
+                      setConfirmPassword(event.target.value)
+                      setConfirmPasswordError('')
+                      setError('')
+                    }}
+                  />
+                  {confirmPasswordError && <small>{confirmPasswordError}</small>}
+                </label>
+
+                <button className="auth-submit" type="submit" disabled={submitting}>
+                  {submitting ? <><span className="auth-spinner" /> Creating account…</> : 'Create account'}
+                </button>
+              </form>
+
+              <p className="auth-invite-note">
+                Already have an account? <button className="auth-link" type="button" onClick={backToSignIn}>Sign in</button>
+              </p>
+            </>
+          )}
+
+          {view === 'signup-sent' && (
+            <div className="auth-success-view">
+              <div className="auth-success-icon">✉</div>
+              <span className="auth-form-kicker">CONFIRM YOUR EMAIL</span>
+              <h2>One step left</h2>
+              <p className="auth-subtitle">We sent a confirmation link to <strong>{sentTo}</strong>.</p>
+              <div className="auth-info-box">
+                Confirm your email, then sign in. Smart CRM will automatically finish creating <strong>{createdWorkspaceName}</strong>, its default pipeline, and the Free plan.
+              </div>
+              <button className="auth-submit" type="button" onClick={backToSignIn}>Back to sign in</button>
+            </div>
           )}
 
           {view === 'reset' && (

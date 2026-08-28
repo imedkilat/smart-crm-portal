@@ -48,12 +48,25 @@ export default function SettingsPage({ onOpenRunLog, onLeadRestored }: Props) {
       supabase.auth.getUser(),
     ])
 
+    const user = userResult.data.user
+    let membershipRole: string | null = null
+    if (user) {
+      const { data: membership } = await supabase
+        .from('workspace_members')
+        .select('role')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle()
+      membershipRole = membership?.role || null
+    }
+
     setDatabaseHealthy(!leadResult.error && !archiveResult.error && !eventResult.error)
     setActiveLeadCount(leadResult.count ?? null)
     setArchivedLeadCount(archiveResult.count ?? null)
     setRoutingEventCount(eventResult.count ?? null)
-    setOwnerEmail(userResult.data.user?.email || null)
-    setOwnerRole((userResult.data.user?.app_metadata?.role as string | undefined) || null)
+    setOwnerEmail(user?.email || null)
+    setOwnerRole(membershipRole)
     setCheckedAt(new Date())
     setChecking(false)
   }, [])
@@ -126,11 +139,11 @@ export default function SettingsPage({ onOpenRunLog, onLeadRestored }: Props) {
 
         <aside className="settings-side-column">
           <article className="panel settings-section-card compact-card">
-            <span className="mini-label">OWNER ACCESS</span>
+            <span className="mini-label">WORKSPACE ACCESS</span>
             <h2>Workspace identity</h2>
             <div className="owner-settings-row"><span>Email</span><strong>{ownerEmail || 'Unavailable'}</strong></div>
-            <div className="owner-settings-row"><span>Role</span><strong>{ownerRole || 'Authenticated user'}</strong></div>
-            <div className="owner-settings-row"><span>Access model</span><strong>Single owner</strong></div>
+            <div className="owner-settings-row"><span>Role</span><strong>{ownerRole || 'Authenticated member'}</strong></div>
+            <div className="owner-settings-row"><span>Access model</span><strong>Workspace membership</strong></div>
           </article>
 
           <article className="panel settings-section-card compact-card">
