@@ -1,7 +1,7 @@
 -- Follow-Up Engine production hardening.
 -- Source-only until explicitly applied to production.
 -- Adds per-workspace configuration, tenant integrity, machine-only idempotency,
--- and a database-level production guard for automated follow-up tasks.
+-- and database-level production guards for automated follow-up tasks.
 
 create table if not exists public.workspace_follow_up_settings (
   workspace_id uuid primary key
@@ -56,26 +56,33 @@ using (
   )
 );
 
+-- Owners and admins can manage automation settings for their workspace.
+-- The workspace_members self-read policy lets this authorization predicate
+-- resolve the caller's own membership without exposing other tenants.
 drop policy if exists workspace_follow_up_settings_creator_update
   on public.workspace_follow_up_settings;
-create policy workspace_follow_up_settings_creator_update
+drop policy if exists workspace_follow_up_settings_admin_update
+  on public.workspace_follow_up_settings;
+create policy workspace_follow_up_settings_admin_update
 on public.workspace_follow_up_settings
 for update
 to authenticated
 using (
   exists (
     select 1
-    from public.workspaces w
-    where w.id = workspace_follow_up_settings.workspace_id
-      and w.created_by = (select auth.uid())
+    from public.workspace_members wm
+    where wm.workspace_id = workspace_follow_up_settings.workspace_id
+      and wm.user_id = (select auth.uid())
+      and wm.role in ('owner', 'admin')
   )
 )
 with check (
   exists (
     select 1
-    from public.workspaces w
-    where w.id = workspace_follow_up_settings.workspace_id
-      and w.created_by = (select auth.uid())
+    from public.workspace_members wm
+    where wm.workspace_id = workspace_follow_up_settings.workspace_id
+      and wm.user_id = (select auth.uid())
+      and wm.role in ('owner', 'admin')
   )
 );
 
@@ -164,10 +171,19 @@ create unique index if not exists uq_lead_tasks_workspace_automation_key
   on public.lead_tasks (workspace_id, automation_key)
   where automation_key is not null;
 
+-- A lead can have at most one open automated Follow-Up Engine task at a time.
+-- This closes the concurrency edge where two overlapping executions could use
+-- different day/status keys for the same lead and otherwise both insert.
+create unique index if not exists uq_lead_tasks_open_follow_up_per_lead
+  on public.lead_tasks (workspace_id, lead_id)
+  where status = 'open'
+    and automation_key like 'follow-up:%';
+
 -- Keep automation_key machine-only without breaking the existing Tasks UI.
--- Existing authenticated SELECT/DELETE privileges remain. INSERT/UPDATE are
--- re-granted only for human-editable columns used by the frontend.
-revoke insert, update on table public.lead_tasks from authenticated;
+-- Production currently grants authenticated more table privileges than the UI
+-- needs, so reset this table to explicit frontend-safe privileges here.
+revoke all on table public.lead_tasks from authenticated;
+grant select, delete on table public.lead_tasks to authenticated;
 grant insert (
   workspace_id,
   lead_id,
