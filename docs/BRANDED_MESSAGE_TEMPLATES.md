@@ -49,7 +49,7 @@ Important fields:
 - `version`
 - audit fields
 
-`template_key` is the stable machine identifier intended for future automation references. It is chosen at insert time and is **immutable afterward**. The database revision trigger rejects attempted renames even if a direct Data API caller includes a different key.
+`template_key` is the stable machine identifier intended for future automation references. It is chosen at insert time and is **immutable afterward**. Authenticated UPDATE privileges exclude the key, and the database revision trigger independently rejects attempted renames as defense in depth.
 
 Each workspace gets two starter templates:
 
@@ -71,7 +71,7 @@ RLS follows the existing Smart CRM workspace model:
 
 Authenticated hard-delete is intentionally unavailable in v1. Templates should be retired with `is_enabled = false` so stable automation references are not destroyed before Smart CRM has a recovery/history UX.
 
-Authenticated users cannot change tenant identity (`workspace_id`), revision counters, audit columns, or the effective `template_key` after creation.
+Authenticated users cannot change tenant identity (`workspace_id`), `template_key`, revision counters, or audit columns after creation.
 
 The Settings UI also fails closed when an account belongs to multiple workspaces until Smart CRM has an explicit active-workspace selector.
 
@@ -125,9 +125,11 @@ The current source does not create a historical snapshot table. `version` is a m
 
 The database has a partial unique index allowing one default email template per workspace/purpose.
 
-When an owner/admin marks a different template as default, the Settings UI first clears the previous default for that purpose, then saves the selected template.
+Default switching is database-owned. A `BEFORE INSERT/UPDATE` trigger takes a transaction-scoped advisory lock for the workspace/channel/purpose and demotes any conflicting default before the incoming row becomes default. The partial unique index remains the final integrity guard.
 
-This is sufficient for the editing surface. The future outbound engine should still fail closed if no enabled default exists.
+The Settings UI therefore performs one create/update request rather than a risky two-request "clear old default, then save new default" sequence. Concurrent admin edits are serialized per workspace/purpose.
+
+The future outbound engine should still fail closed if no enabled default exists.
 
 ## Rollout plan
 
@@ -138,15 +140,16 @@ Production rollout should separately verify:
 1. migration history
 2. starter-template backfill for every workspace
 3. owner/admin create/update/default switching
-4. `template_key` rename rejection
-5. authenticated hard-delete denial and disable-only lifecycle
-6. normal-member read-only behavior
-7. cross-workspace isolation
-8. unknown/malformed variable rejection in the UI
-9. preview inheritance from live Workspace Branding
-10. revision increment on save
-11. no outbound provider/network calls from the template component
-12. Supabase security/performance advisors after DDL
+4. atomic default replacement and one-default integrity
+5. `template_key` rename rejection
+6. authenticated hard-delete denial and disable-only lifecycle
+7. normal-member read-only behavior
+8. cross-workspace isolation
+9. unknown/malformed variable rejection in the UI
+10. preview inheritance from live Workspace Branding
+11. revision increment on save
+12. no outbound provider/network calls from the template component
+13. Supabase security/performance advisors after DDL
 
 ## Future handoff to outbound email
 
