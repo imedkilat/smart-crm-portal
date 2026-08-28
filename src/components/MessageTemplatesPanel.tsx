@@ -64,7 +64,7 @@ type TemplateDatabase = {
           is_default?: boolean
         }
         Update: Partial<Pick<MessageTemplateRow,
-          'template_key' | 'name' | 'purpose' | 'subject_template' | 'body_template' | 'tone' | 'is_enabled' | 'is_default'
+          'name' | 'purpose' | 'subject_template' | 'body_template' | 'tone' | 'is_enabled' | 'is_default'
         >>
         Relationships: []
       }
@@ -81,8 +81,6 @@ type TemplateDatabase = {
 type TemplateDraft = Pick<MessageTemplateRow,
   'id' | 'template_key' | 'name' | 'purpose' | 'subject_template' | 'body_template' | 'tone' | 'is_enabled' | 'is_default' | 'version'
 >
-
-const ZERO_UUID = '00000000-0000-0000-0000-000000000000'
 
 const EMPTY_DRAFT: TemplateDraft = {
   id: '',
@@ -352,25 +350,7 @@ export default function MessageTemplatesPanel() {
     setError(null)
     setNotice(null)
 
-    if (draft.is_default) {
-      const clearResult = await client
-        .from('message_templates')
-        .update({ is_default: false })
-        .eq('workspace_id', workspaceId)
-        .eq('purpose', draft.purpose)
-        .eq('channel', 'email')
-        .eq('is_default', true)
-        .neq('id', draft.id || ZERO_UUID)
-
-      if (clearResult.error) {
-        setSaving(false)
-        setError(clearResult.error.message)
-        return
-      }
-    }
-
-    const payload = {
-      template_key: draft.template_key,
+    const editablePayload = {
       name,
       purpose: draft.purpose,
       subject_template: subject,
@@ -383,12 +363,17 @@ export default function MessageTemplatesPanel() {
     const result = selectedId === 'new'
       ? await client
           .from('message_templates')
-          .insert({ workspace_id: workspaceId, channel: 'email', ...payload })
+          .insert({
+            workspace_id: workspaceId,
+            template_key: draft.template_key,
+            channel: 'email',
+            ...editablePayload,
+          })
           .select('*')
           .single()
       : await client
           .from('message_templates')
-          .update(payload)
+          .update(editablePayload)
           .eq('workspace_id', workspaceId)
           .eq('id', draft.id)
           .select('*')
