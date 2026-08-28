@@ -49,6 +49,8 @@ Important fields:
 - `version`
 - audit fields
 
+`template_key` is the stable machine identifier intended for future automation references. It is chosen at insert time and is **immutable afterward**. The database revision trigger rejects attempted renames even if a direct Data API caller includes a different key.
+
 Each workspace gets two starter templates:
 
 1. `hot-follow-up`
@@ -63,11 +65,13 @@ Only one default email template may exist per `(workspace, purpose)`.
 RLS follows the existing Smart CRM workspace model:
 
 - workspace members: `SELECT`
-- workspace owners/admins: `INSERT`, editable-column `UPDATE`, and `DELETE`
+- workspace owners/admins: `INSERT` and editable-column `UPDATE`
 - `anon`: no access
 - `service_role`: full access
 
-Authenticated users cannot update tenant identity (`workspace_id`), revision counters, or audit columns directly.
+Authenticated hard-delete is intentionally unavailable in v1. Templates should be retired with `is_enabled = false` so stable automation references are not destroyed before Smart CRM has a recovery/history UX.
+
+Authenticated users cannot change tenant identity (`workspace_id`), revision counters, audit columns, or the effective `template_key` after creation.
 
 The Settings UI also fails closed when an account belongs to multiple workspaces until Smart CRM has an explicit active-workspace selector.
 
@@ -113,6 +117,8 @@ A future outbound-email layer should render the plain-text template first, then 
 
 Every update to a template row increments `version` and updates `updated_at` / `updated_by` through a database trigger.
 
+The same trigger also guards template identity: changing `template_key` raises an error.
+
 The current source does not create a historical snapshot table. `version` is a monotonic revision marker only. Full template history can be added later if commercial requirements justify it.
 
 ## Default switching
@@ -132,13 +138,15 @@ Production rollout should separately verify:
 1. migration history
 2. starter-template backfill for every workspace
 3. owner/admin create/update/default switching
-4. normal-member read-only behavior
-5. cross-workspace isolation
-6. unknown/malformed variable rejection in the UI
-7. preview inheritance from live Workspace Branding
-8. revision increment on save
-9. no outbound provider/network calls from the template component
-10. Supabase security/performance advisors after DDL
+4. `template_key` rename rejection
+5. authenticated hard-delete denial and disable-only lifecycle
+6. normal-member read-only behavior
+7. cross-workspace isolation
+8. unknown/malformed variable rejection in the UI
+9. preview inheritance from live Workspace Branding
+10. revision increment on save
+11. no outbound provider/network calls from the template component
+12. Supabase security/performance advisors after DDL
 
 ## Future handoff to outbound email
 
