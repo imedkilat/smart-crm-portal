@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Database } from '../types/database'
+import WorkspaceBrandingPanel from '../components/WorkspaceBrandingPanel'
 import ArchivePage from './ArchivePage'
 
 const LEAD_WEBHOOK = import.meta.env.VITE_N8N_LEAD_WEBHOOK_URL || 'https://tolakautomations.app.n8n.cloud/webhook/799b1d66-0a5f-44b0-8f43-600ea4775979'
@@ -120,6 +121,8 @@ export default function SettingsPage({ onOpenRunLog, onLeadRestored }: Props) {
           <p className="endpoint-copy">{endpointLabel(STATUS_WEBHOOK)}</p>
         </article>
       </section>
+
+      <WorkspaceBrandingPanel />
 
       <section className="settings-layout">
         <article className="panel settings-section-card">
