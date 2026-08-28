@@ -1,662 +1,845 @@
 {
-    "name":  "Smart CRM Portal  - Lead Intake \u0026 Classification",
-    "nodes":  [
-                  {
-                      "parameters":  {
-                                         "httpMethod":  "POST",
-                                         "path":  "799b1d66-0a5f-44b0-8f43-600ea4775979",
-                                         "options":  {
-
-                                                     }
-                                     },
-                      "type":  "n8n-nodes-base.webhook",
-                      "typeVersion":  2.1,
-                      "position":  [
-                                       -848,
-                                       256
-                                   ],
-                      "id":  "5903dd4c-dd73-433c-9787-b79f4ef464f1",
-                      "name":  "Webhook",
-                      "webhookId":  "799b1d66-0a5f-44b0-8f43-600ea4775979"
-                  },
-                  {
-                      "parameters":  {
-                                         "conditions":  {
-                                                            "options":  {
-                                                                            "caseSensitive":  true,
-                                                                            "leftValue":  "",
-                                                                            "typeValidation":  "strict",
-                                                                            "version":  2
-                                                                        },
-                                                            "conditions":  [
-                                                                               {
-                                                                                   "id":  "45cfd92b-7414-4a8b-9b01-8025e756576c",
-                                                                                   "leftValue":  "={{ $json.body.submission_type }}",
-                                                                                   "rightValue":  "=manual_add",
-                                                                                   "operator":  {
-                                                                                                    "type":  "string",
-                                                                                                    "operation":  "equals",
-                                                                                                    "name":  "filter.operator.equals"
-                                                                                                }
-                                                                               }
-                                                                           ],
-                                                            "combinator":  "and"
-                                                        },
-                                         "options":  {
-
-                                                     }
-                                     },
-                      "type":  "n8n-nodes-base.if",
-                      "typeVersion":  2.2,
-                      "position":  [
-                                       -656,
-                                       256
-                                   ],
-                      "id":  "b6beb62f-a9a6-4086-8b12-6d0b4cf96a9b",
-                      "name":  "If"
-                  },
-                  {
-                      "parameters":  {
-                                         "promptType":  "define",
-                                         "text":  "={{ JSON.stringify($json.body, null, 2) }}",
-                                         "options":  {
-                                                         "systemMessage":  "=# System Role\nYou are an AI Lead Classifier assigned to evaluate individual leads submitted manually through a CRM interface. Your role is to analyze the content of each manually submitted lead and return a structured, cleanly formatted JSON object containing both the classification metadata and the original lead information. Your output will be automatically logged into Google Sheets for further processing by the sales team.\n\n# Task Specification\nFor each lead, extract and include the following fields:\n\n- **name**: The full name of the lead (if provided).\n- **email**: The lead’s email address.\n- **message**: The inquiry or message submitted by the lead.\n- **budget**: The budget mentioned by the lead (in USD, as an integer).\n- **category**: Classify the lead as one of:\n  - `\"Hot\"` – Strong buying intent or high urgency.\n  - `\"Warm\"` – Shows interest but may require nurturing.\n  - `\"Cold\"` – Vague or low intent; unlikely to convert.\n- **intent**: Identify the lead’s objective as one of:\n  - `\"Inquiry\"` – Seeking information, clarification, or details.\n  - `\"Partnership\"` – Expressing interest in collaboration or B2B engagement.\n  - `\"Purchase\"` – Indicating intent to buy a product or service.\n- **summary**: Write a short (1–2 sentence) human-readable summary that explains the lead’s goal and your rationale behind the assigned category and intent.\n- **upload_date**: Copy the same date value provided in the root `upload_date` field of the input.\n**submission_type**: The submission type of this file and where it came from\n\n# Context: Manual Lead Submission\nThis classification process applies only to **manual_add** submissions — leads added individually by users via a CRM form or interface. Each lead is passed to you as a single data object. Your classification will be used immediately to update a Google Sheet used by sales and operations teams.\n\n# Guidelines\n- Always base classifications on the content of the `message` field.\n- If any field is missing (e.g., name, email, budget), return it as `null` and explain its absence in the `summary`.\n- Be conservative in assumptions. If intent or category is unclear, default to the more cautious or neutral label (e.g., `\"Warm\"` or `\"Inquiry\"`).\n- Format the JSON cleanly and accurately to ensure it can be parsed without errors.\n- Do not fabricate data or guess beyond what is reasonably inferred from the input.\n\n# Output Format\n```json\n{\n  \"name\": \"Full Name\",\n  \"email\": \"email@domain.com\",\n  \"message\": \"Original inquiry text.\",\n  \"budget\": 5000,\n  \"category\": \"Hot\",\n  \"intent\": \"Purchase\",\n  \"summary\": \"The lead is actively looking for a solution to automate lead sorting and is ready to invest. This indicates high intent and urgency.\"\n  \"upload_date\": \"10/10/2025\"\n  \"submission_type\" : \"Manual Add\"\n}"
-                                                     }
-                                     },
-                      "type":  "@n8n/n8n-nodes-langchain.agent",
-                      "typeVersion":  2.2,
-                      "position":  [
-                                       -80,
-                                       16
-                                   ],
-                      "id":  "d7dd208b-bba8-4789-b618-221874668285",
-                      "name":  "Manual Adding AI Agent"
-                  },
-                  {
-                      "parameters":  {
-                                         "promptType":  "define",
-                                         "text":  "={{$json.prompt}}",
-                                         "options":  {
-                                                         "systemMessage":  "=# System Role\nYou are an AI Lead Classifier responsible for analyzing and categorizing multiple leads submitted in bulk via Excel file uploads. Each input you receive will contain an **object with two keys**:\n1. `upload_date`: a string representing the date the Excel file was uploaded (e.g., `\"10/10/2025\"`).\n2. `leads`: an **array of lead objects**, where each lead corresponds to a single row from the Excel sheet.\n\nYour task is to process all leads in the array and return a **JSON array of classified lead objects** — each containing original data, classification fields, and the `upload_date`.\n\n---\n\n# Task Specification\nFor every lead object in the `leads` array, analyze it independently and return a classification object containing:\n\n- **name**: The full name of the lead (if provided).\n- **email**: The lead’s email address.\n- **message**: The original inquiry or message provided by the lead.\n- **budget**: The specified or implied budget, expressed as an integer in USD.\n- **category**: One of the following values, based on engagement or urgency:\n  - `\"Hot\"` – High urgency or strong purchase intent.\n  - `\"Warm\"` – Moderate interest or tentative engagement.\n  - `\"Cold\"` – Low intent, vague, or unlikely to convert.\n- **intent**: One of the following values, describing purpose:\n  - `\"Inquiry\"` – Asking for information or details.\n  - `\"Partnership\"` – Seeking collaboration or business opportunity.\n  - `\"Purchase\"` – Expressing clear buying intent.\n- **summary**: A brief (1–2 sentence) rationale summarizing the lead’s goal and your reasoning for the chosen category and intent.\n- **upload_date**: Copy the same date value provided in the root `upload_date` field of the input.\n**submission_type**: The submission type of this file and where it came from\n\n---\n\n# Context: Excel-Based Bulk Intake\nThis classifier is used in the **excel_file** workflow, where an entire Excel document of leads is uploaded.  \nA preprocessing system converts the spreadsheet into a structured JSON object that includes:\n- `upload_date`: the file upload date\n- `leads`: an array of parsed rows from the spreadsheet\n\nExpect occasional:\n- Missing or incomplete fields (e.g., no name or budget)\n- Ambiguous or low-quality message text\n- Format inconsistencies or non-standard phrasing\n\nYou must handle these gracefully — never hallucinate details, and clearly state uncertainty in your summaries when applicable.\n\n---\n\n# Guidelines\n- Evaluate each lead independently, even when part of a batch.\n- Base all classifications on the lead’s `message` field.\n- If a field is missing or unclear, output `null` and explain in the `summary`.\n- Do **not** fabricate or assume details.\n- **Always include `upload_date`** in every classified lead object.\n- The final output must be **a valid JSON array** — no extra text or formatting.\n\n---\n\n# Output Format\n```json\n[\n  {\n    \"name\": \"Full Name\",\n    \"email\": \"email@domain.com\",\n    \"message\": \"Original inquiry text.\",\n    \"budget\": 5000,\n    \"category\": \"Hot\",\n    \"intent\": \"Purchase\",\n    \"summary\": \"The lead is seeking a system to automate lead management and shows high urgency and readiness to purchase.\",\n    \"upload_date\": \"10/10/2025\"\n    \"submission_type\" : \"Excel File\"\n  },\n  {\n    \"name\": \"John Doe\",\n    \"email\": null,\n    \"message\": \"Interested in learning more about partnership opportunities.\",\n    \"budget\": null,\n    \"category\": \"Warm\",\n    \"intent\": \"Partnership\",\n    \"summary\": \"The lead inquired about potential collaborations but did not specify urgency.\",\n    \"upload_date\": \"10/10/2025\"\n    \"submission_type\" : \"Excel File\"\n  }\n]"
-                                                     }
-                                     },
-                      "type":  "@n8n/n8n-nodes-langchain.agent",
-                      "typeVersion":  2.2,
-                      "position":  [
-                                       144,
-                                       368
-                                   ],
-                      "id":  "f31bc4d7-a381-43be-880b-779a01fd055a",
-                      "name":  "Excel File AI Agent"
-                  },
-                  {
-                      "parameters":  {
-                                         "options":  {
-
-                                                     }
-                                     },
-                      "type":  "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
-                      "typeVersion":  1,
-                      "position":  [
-                                       80,
-                                       512
-                                   ],
-                      "id":  "b00d8453-f9b0-46c0-9705-cb52f91c63ce",
-                      "name":  "Gemini - Excel File"
-                  },
-                  {
-                      "parameters":  {
-                                         "options":  {
-
-                                                     }
-                                     },
-                      "type":  "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
-                      "typeVersion":  1,
-                      "position":  [
-                                       -144,
-                                       144
-                                   ],
-                      "id":  "8aa39266-4ee8-4696-8134-5568cd116783",
-                      "name":  "Gemini - Manual File"
-                  },
-                  {
-                      "parameters":  {
-                                         "operation":  "xlsx",
-                                         "binaryPropertyName":  "file",
-                                         "options":  {
-                                                         "headerRow":  true
-                                                     }
-                                     },
-                      "type":  "n8n-nodes-base.extractFromFile",
-                      "typeVersion":  1,
-                      "position":  [
-                                       -384,
-                                       352
-                                   ],
-                      "id":  "58da5572-ec3a-4b5f-b6a6-27f5820d4546",
-                      "name":  "Read Excel"
-                  },
-                  {
-                      "parameters":  {
-                                         "batchSize":  10000,
-                                         "options":  {
-                                                         "reset":  false
-                                                     }
-                                     },
-                      "type":  "n8n-nodes-base.splitInBatches",
-                      "typeVersion":  3,
-                      "position":  [
-                                       -224,
-                                       352
-                                   ],
-                      "id":  "84c04458-eb20-499f-b09d-49ef8e6640b6",
-                      "name":  "Loop Rows"
-                  },
-                  {
-                      "parameters":  {
-                                         "assignments":  {
-                                                             "assignments":  [
-                                                                                 {
-                                                                                     "id":  "6b4331d4-52ce-4751-b7bd-d264557daea8",
-                                                                                     "name":  "prompt",
-                                                                                     "value":  "=`Please classify the following lead:\\n\\n{\\n  \"name\": \"{{ $json.Name }}\",\\n  \"email\": \"{{ $json.Email }}\",\\n  \"message\": \"{{ $json.Message }}\",\\n  \"budget\": {{ $json.Budget }}\\n}`",
-                                                                                     "type":  "string"
-                                                                                 }
-                                                                             ]
-                                                         },
-                                         "options":  {
-
-                                                     }
-                                     },
-                      "type":  "n8n-nodes-base.set",
-                      "typeVersion":  3.4,
-                      "position":  [
-                                       -16,
-                                       368
-                                   ],
-                      "id":  "0c9d2eb9-48fb-4ca5-aed2-036d8dfb3bef",
-                      "name":  "Build Prompt"
-                  },
-                  {
-                      "parameters":  {
-                                         "sessionIdType":  "customKey",
-                                         "sessionKey":  "={{$json.prompt}}"
-                                     },
-                      "type":  "@n8n/n8n-nodes-langchain.memoryBufferWindow",
-                      "typeVersion":  1.3,
-                      "position":  [
-                                       224,
-                                       496
-                                   ],
-                      "id":  "2a3a4c47-97fe-482d-94b0-aba51a5b89de",
-                      "name":  "Memory (Excel)"
-                  },
-                  {
-                      "parameters":  {
-                                         "jsCode":  "// === Get all input items ===\nconst items = $input.all();\n\n// === Add upload date ===\nconst now = new Date();\nconst formattedDate = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}`;\n\n// === Process all leads ===\nlet results = [];\n\nfor (const item of items) {\n  let raw = item.json.output;\n\n  if (!raw) continue;\n\n  // Remove markdown formatting\n  raw = raw.replace(/```json|```/g, \u0027\u0027).trim();\n\n  let parsed;\n  try {\n    parsed = JSON.parse(raw);\n  } catch (e) {\n    console.error(\"JSON parse failed:\", e);\n    continue;\n  }\n\n  // Handle both array and single object output\n  const leads = Array.isArray(parsed) ? parsed : [parsed];\n\n  for (const lead of leads) {\n    results.push({\n      json: {\n        name: lead.name || \"\",\n        email: lead.email || \"\",\n        message: lead.message || lead.notes || \"\",\n        budget: lead.budget || \"\",\n        category: lead.category || \"\",\n        intent: lead.intent || \"\",\n        summary: lead.summary || \"\",\n        date: formattedDate || \"\",\n        submission_type: lead.submission_type \n      }\n    });\n  }\n}\n\nreturn results;\n"
-                                     },
-                      "type":  "n8n-nodes-base.code",
-                      "typeVersion":  2,
-                      "position":  [
-                                       576,
-                                       256
-                                   ],
-                      "id":  "d2e0d87d-66c6-4ab4-9d14-7d1fcac4b638",
-                      "name":  "Normalize Output"
-                  },
-                  {
-                      "parameters":  {
-                                         "tableId":  "leads",
-                                         "fieldsUi":  {
-                                                          "fieldValues":  [
-                                                                              {
-                                                                                  "fieldId":  "name",
-                                                                                  "fieldValue":  "={{ $json.name }}"
-                                                                              },
-                                                                              {
-                                                                                  "fieldId":  "email",
-                                                                                  "fieldValue":  "={{ $json.email }}"
-                                                                              },
-                                                                              {
-                                                                                  "fieldId":  "message",
-                                                                                  "fieldValue":  "={{ $json.message }}"
-                                                                              },
-                                                                              {
-                                                                                  "fieldId":  "budget",
-                                                                                  "fieldValue":  "={{ $json.budget }}"
-                                                                              },
-                                                                              {
-                                                                                  "fieldId":  "category",
-                                                                                  "fieldValue":  "={{ $json.category }}"
-                                                                              },
-                                                                              {
-                                                                                  "fieldId":  "intent",
-                                                                                  "fieldValue":  "={{ $json.intent }}"
-                                                                              },
-                                                                              {
-                                                                                  "fieldId":  "summary",
-                                                                                  "fieldValue":  "={{ $json.summary }}"
-                                                                              },
-                                                                              {
-                                                                                  "fieldId":  "created_at",
-                                                                                  "fieldValue":  "={{ $json.date }}"
-                                                                              },
-                                                                              {
-                                                                                  "fieldId":  "source",
-                                                                                  "fieldValue":  "={{ $json.submission_type }}"
-                                                                              }
-                                                                          ]
-                                                      }
-                                     },
-                      "type":  "n8n-nodes-base.supabase",
-                      "typeVersion":  1,
-                      "position":  [
-                                       736,
-                                       256
-                                   ],
-                      "id":  "e4875150-8cee-46db-bd62-a5143ac2772f",
-                      "name":  "Save to Supabase",
-                      "alwaysOutputData":  false
-                  },
-                  {
-                      "parameters":  {
-                                         "operation":  "upsert",
-                                         "base":  {
-                                                      "__rl":  true,
-                                                      "value":  "appNwQBtRTGoMsrNt",
-                                                      "mode":  "list",
-                                                      "cachedResultName":  "Smart CRM Database",
-                                                      "cachedResultUrl":  "https://airtable.com/appNwQBtRTGoMsrNt"
-                                                  },
-                                         "table":  {
-                                                       "__rl":  true,
-                                                       "value":  "tblDgoTaFZIiGnDgC",
-                                                       "mode":  "list",
-                                                       "cachedResultName":  "Leads",
-                                                       "cachedResultUrl":  "https://airtable.com/appNwQBtRTGoMsrNt/tblDgoTaFZIiGnDgC"
-                                                   },
-                                         "columns":  {
-                                                         "mappingMode":  "defineBelow",
-                                                         "value":  {
-                                                                       "id":  "={{ $json.id }}",
-                                                                       "Name":  "={{ $json.name }}",
-                                                                       "Email":  "={{ $json.email }}",
-                                                                       "Category":  "={{ $json.category }}",
-                                                                       "Source":  "={{ $json.source }}",
-                                                                       "Intent":  "={{ $json.intent }}",
-                                                                       "AI Notes":  "={{ $json.summary }}",
-                                                                       "Date Added":  "={{ $json.date_added }}"
-                                                                   },
-                                                         "matchingColumns":  [
-                                                                                 "id"
-                                                                             ],
-                                                         "schema":  [
-                                                                        {
-                                                                            "id":  "id",
-                                                                            "displayName":  "id",
-                                                                            "required":  false,
-                                                                            "defaultMatch":  true,
-                                                                            "display":  true,
-                                                                            "type":  "string",
-                                                                            "readOnly":  true,
-                                                                            "removed":  false
-                                                                        },
-                                                                        {
-                                                                            "id":  "Name",
-                                                                            "displayName":  "Name",
-                                                                            "required":  false,
-                                                                            "defaultMatch":  false,
-                                                                            "canBeUsedToMatch":  true,
-                                                                            "display":  true,
-                                                                            "type":  "string",
-                                                                            "readOnly":  false,
-                                                                            "removed":  false
-                                                                        },
-                                                                        {
-                                                                            "id":  "Email",
-                                                                            "displayName":  "Email",
-                                                                            "required":  false,
-                                                                            "defaultMatch":  false,
-                                                                            "canBeUsedToMatch":  true,
-                                                                            "display":  true,
-                                                                            "type":  "string",
-                                                                            "readOnly":  false,
-                                                                            "removed":  false
-                                                                        },
-                                                                        {
-                                                                            "id":  "Category",
-                                                                            "displayName":  "Category",
-                                                                            "required":  false,
-                                                                            "defaultMatch":  false,
-                                                                            "canBeUsedToMatch":  true,
-                                                                            "display":  true,
-                                                                            "type":  "options",
-                                                                            "options":  [
-                                                                                            {
-                                                                                                "name":  "Hot",
-                                                                                                "value":  "Hot"
-                                                                                            },
-                                                                                            {
-                                                                                                "name":  "Warm",
-                                                                                                "value":  "Warm"
-                                                                                            },
-                                                                                            {
-                                                                                                "name":  "Cold",
-                                                                                                "value":  "Cold"
-                                                                                            }
-                                                                                        ],
-                                                                            "readOnly":  false,
-                                                                            "removed":  false
-                                                                        },
-                                                                        {
-                                                                            "id":  "Source",
-                                                                            "displayName":  "Source",
-                                                                            "required":  false,
-                                                                            "defaultMatch":  false,
-                                                                            "canBeUsedToMatch":  true,
-                                                                            "display":  true,
-                                                                            "type":  "string",
-                                                                            "readOnly":  false,
-                                                                            "removed":  false
-                                                                        },
-                                                                        {
-                                                                            "id":  "Intent",
-                                                                            "displayName":  "Intent",
-                                                                            "required":  false,
-                                                                            "defaultMatch":  false,
-                                                                            "canBeUsedToMatch":  true,
-                                                                            "display":  true,
-                                                                            "type":  "string",
-                                                                            "readOnly":  false,
-                                                                            "removed":  false
-                                                                        },
-                                                                        {
-                                                                            "id":  "AI Notes",
-                                                                            "displayName":  "AI Notes",
-                                                                            "required":  false,
-                                                                            "defaultMatch":  false,
-                                                                            "canBeUsedToMatch":  true,
-                                                                            "display":  true,
-                                                                            "type":  "string",
-                                                                            "readOnly":  false,
-                                                                            "removed":  false
-                                                                        },
-                                                                        {
-                                                                            "id":  "Date Added",
-                                                                            "displayName":  "Date Added",
-                                                                            "required":  false,
-                                                                            "defaultMatch":  false,
-                                                                            "canBeUsedToMatch":  true,
-                                                                            "display":  true,
-                                                                            "type":  "dateTime",
-                                                                            "readOnly":  false,
-                                                                            "removed":  false
-                                                                        }
-                                                                    ],
-                                                         "attemptToConvertTypes":  false,
-                                                         "convertFieldsToString":  false
-                                                     },
-                                         "options":  {
-
-                                                     }
-                                     },
-                      "type":  "n8n-nodes-base.airtable",
-                      "typeVersion":  2.1,
-                      "position":  [
-                                       896,
-                                       256
-                                   ],
-                      "id":  "423f8675-32fb-46c3-941f-cc997754f210",
-                      "name":  "Upsert to Airtable"
-                  },
-                  {
-                      "parameters":  {
-                                         "sessionIdType":  "customKey",
-                                         "sessionKey":  "={{ JSON.stringify($json.body, null, 2) }}"
-                                     },
-                      "type":  "@n8n/n8n-nodes-langchain.memoryBufferWindow",
-                      "typeVersion":  1.3,
-                      "position":  [
-                                       16,
-                                       144
-                                   ],
-                      "id":  "8f35a2c8-1bef-465e-8d82-94a5c4efa29c",
-                      "name":  "Memory - Manual"
-                  },
-                  {
-                      "parameters":  {
-                                         "content":  "## Excel File Path\n",
-                                         "height":  352,
-                                         "width":  864,
-                                         "color":  4
-                                     },
-                      "type":  "n8n-nodes-base.stickyNote",
-                      "position":  [
-                                       -432,
-                                       288
-                                   ],
-                      "typeVersion":  1,
-                      "id":  "2961ef22-f274-41e5-bfb8-5d0ada2a3d6d",
-                      "name":  "Sticky Note1"
-                  },
-                  {
-                      "parameters":  {
-                                         "content":  "## Transform \u0026 Persist\n",
-                                         "height":  208,
-                                         "width":  592,
-                                         "color":  4
-                                     },
-                      "type":  "n8n-nodes-base.stickyNote",
-                      "position":  [
-                                       496,
-                                       208
-                                   ],
-                      "typeVersion":  1,
-                      "id":  "a5a69da6-cda7-4623-8242-d01660739d67",
-                      "name":  "Sticky Note3"
-                  },
-                  {
-                      "parameters":  {
-                                         "content":  "## Manual Add Path\n",
-                                         "height":  320,
-                                         "width":  432,
-                                         "color":  4
-                                     },
-                      "type":  "n8n-nodes-base.stickyNote",
-                      "position":  [
-                                       -192,
-                                       -48
-                                   ],
-                      "typeVersion":  1,
-                      "id":  "b1602492-1058-4b54-ae12-46982a81d384",
-                      "name":  "Sticky Note2"
-                  },
-                  {
-                      "parameters":  {
-                                         "content":  "## Inbound \u0026 Routing\n",
-                                         "height":  192,
-                                         "width":  416,
-                                         "color":  4
-                                     },
-                      "type":  "n8n-nodes-base.stickyNote",
-                      "position":  [
-                                       -896,
-                                       208
-                                   ],
-                      "typeVersion":  1,
-                      "id":  "09434f43-383a-4df2-9e5f-ddf2c6118660",
-                      "name":  "Sticky Note"
-                  }
-              ],
-    "pinData":  {
-
+  "name": "Smart CRM Portal  - Lead Intake & Classification",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "799b1d66-0a5f-44b0-8f43-600ea4775979",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        576,
+        256
+      ],
+      "id": "1001a004-73c2-474a-ab61-3ec9435e5c8c",
+      "name": "Webhook",
+      "webhookId": "799b1d66-0a5f-44b0-8f43-600ea4775979",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "zdV5E5PTMg4rXwqs",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "45cfd92b-7414-4a8b-9b01-8025e756576c",
+              "leftValue": "={{ $json.body.submission_type }}",
+              "rightValue": "=manual_add",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        768,
+        256
+      ],
+      "id": "9b0c89a9-8087-4d92-b334-ec34090903fb",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ JSON.stringify($json.body, null, 2) }}",
+        "options": {
+          "systemMessage": "=# System Role\nYou are an AI Lead Classifier assigned to evaluate individual leads submitted manually through a CRM interface. Your role is to analyze the content of each manually submitted lead and return a structured, cleanly formatted JSON object containing both the classification metadata and the original lead information. Your output will be automatically logged into Google Sheets for further processing by the sales team.\n\n# Task Specification\nFor each lead, extract and include the following fields:\n\n- **name**: The full name of the lead (if provided).\n- **email**: The lead’s email address.\n- **message**: The inquiry or message submitted by the lead.\n- **budget**: Copy the exact budget amount supplied in the input. Do not convert, recalculate, estimate, or change it.\n- **currency_code**: Copy the supplied `currency_code` as an uppercase 3-letter code such as `USD` or `PHP`. If missing or invalid, use `USD`.\n- **category**: Classify the lead as one of:\n  - `\"Hot\"` – Strong buying intent or high urgency.\n  - `\"Warm\"` – Shows interest but may require nurturing.\n  - `\"Cold\"` – Vague or low intent; unlikely to convert.\n- **intent**: Identify the lead’s objective as one of:\n  - `\"Inquiry\"` – Seeking information, clarification, or details.\n  - `\"Partnership\"` – Expressing interest in collaboration or B2B engagement.\n  - `\"Purchase\"` – Indicating intent to buy a product or service.\n- **summary**: Write a short (1–2 sentence) human-readable summary that explains the lead’s goal and your rationale behind the assigned category and intent.\n- **upload_date**: Copy the same date value provided in the root `upload_date` field of the input.\n**submission_type**: The submission type of this file and where it came from\n\n# Context: Manual Lead Submission\nThis classification process applies only to **manual_add** submissions — leads added individually by users via a CRM form or interface. Each lead is passed to you as a single data object. Your classification will be used immediately to update a Google Sheet used by sales and operations teams.\n\n# Guidelines\n- Always base classifications on the content of the `message` field.\n- If any field is missing (e.g., name, email, budget), return it as `null` and explain its absence in the `summary`.\n- Be conservative in assumptions. If intent or category is unclear, default to the more cautious or neutral label (e.g., `\"Warm\"` or `\"Inquiry\"`).\n- Format the JSON cleanly and accurately to ensure it can be parsed without errors.\n- Do not fabricate data or guess beyond what is reasonably inferred from the input.\nCurrency rules:\n- Never perform currency conversion.\n- Never assume USD when `currency_code` is provided.\n- Preserve the original budget amount exactly.\n- Do not infer a different currency from the lead message when `currency_code` is present.\n\n# Output Format\n```json\n{\n  \"name\": \"Full Name\",\n  \"email\": \"email@domain.com\",\n  \"message\": \"Original inquiry text.\",\n  \"budget\": 5000,\n  \"currency_code\": \"USD\",\n  \"category\": \"Hot\",\n  \"intent\": \"Purchase\",\n  \"summary\": \"The lead is actively looking for a solution to automate lead sorting and is ready to invest. This indicates high intent and urgency.\",\n  \"upload_date\": \"10/10/2025\",\n  \"submission_type\" : \"Manual Add\"\n}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        1344,
+        16
+      ],
+      "id": "1a6b2acc-08c7-4d8c-a006-049d4c054d33",
+      "name": "Manual Adding AI Agent"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{$json.prompt}}",
+        "options": {
+          "systemMessage": "=# System Role\nYou are an AI Lead Classifier responsible for analyzing and categorizing multiple leads submitted in bulk via Excel file uploads. Each input you receive will contain an **object with two keys**:\n1. `upload_date`: a string representing the date the Excel file was uploaded (e.g., `\"10/10/2025\"`).\n2. `leads`: an **array of lead objects**, where each lead corresponds to a single row from the Excel sheet.\n\nYour task is to process all leads in the array and return a **JSON array of classified lead objects** — each containing original data, classification fields, and the `upload_date`.\n\n---\n\n# Task Specification\nFor every lead object in the `leads` array, analyze it independently and return a classification object containing:\n\n- **name**: The full name of the lead (if provided).\n- **email**: The lead’s email address.\n- **message**: The original inquiry or message provided by the lead.\n- **budget**: Copy the exact budget amount supplied in the input. Do not convert, recalculate, estimate, or change it.\n- **currency_code**: Copy the supplied `currency_code` as an uppercase 3-letter code such as `USD` or `PHP`. If missing or invalid, use `USD`.\n- **category**: One of the following values, based on engagement or urgency:\n  - `\"Hot\"` – High urgency or strong purchase intent.\n  - `\"Warm\"` – Moderate interest or tentative engagement.\n  - `\"Cold\"` – Low intent, vague, or unlikely to convert.\n- **intent**: One of the following values, describing purpose:\n  - `\"Inquiry\"` – Asking for information or details.\n  - `\"Partnership\"` – Seeking collaboration or business opportunity.\n  - `\"Purchase\"` – Expressing clear buying intent.\n- **summary**: A brief (1–2 sentence) rationale summarizing the lead’s goal and your reasoning for the chosen category and intent.\n- **upload_date**: Copy the same date value provided in the root `upload_date` field of the input.\n**submission_type**: The submission type of this file and where it came from\n\n---\n\n# Context: Excel-Based Bulk Intake\nThis classifier is used in the **excel_file** workflow, where an entire Excel document of leads is uploaded.  \nA preprocessing system converts the spreadsheet into a structured JSON object that includes:\n- `upload_date`: the file upload date\n- `leads`: an array of parsed rows from the spreadsheet\n\nExpect occasional:\n- Missing or incomplete fields (e.g., no name or budget)\n- Ambiguous or low-quality message text\n- Format inconsistencies or non-standard phrasing\n\nYou must handle these gracefully — never hallucinate details, and clearly state uncertainty in your summaries when applicable.\n\n---\n\n# Guidelines\n- Evaluate each lead independently, even when part of a batch.\n- Base all classifications on the lead’s `message` field.\n- If a field is missing or unclear, output `null` and explain in the `summary`.\n- Do **not** fabricate or assume details.\n- **Always include `upload_date`** in every classified lead object.\n- The final output must be **a valid JSON array** — no extra text or formatting.\n\nCurrency rules:\n- Never perform foreign-exchange conversion.\n- Never assume the amount is USD when `currency_code` is present.\n- Preserve `budget` and `currency_code` exactly as supplied.\n- If the Excel row has no Currency value, use `USD`.\n\n---\n\n# Output Format\n```json\n[\n  {\n    \"name\": \"Full Name\",\n    \"email\": \"email@domain.com\",\n    \"message\": \"Original inquiry text.\",\n    \"budget\": 5000,\n    \"currency_code\": \"USD\",\n    \"category\": \"Hot\",\n    \"intent\": \"Purchase\",\n    \"summary\": \"The lead is seeking a system to automate lead management and shows high urgency and readiness to purchase.\",\n    \"upload_date\": \"10/10/2025\",\n    \"submission_type\" : \"Excel File\"\n  },\n  {\n    \"name\": \"John Doe\",\n    \"email\": null,\n    \"message\": \"Interested in learning more about partnership opportunities.\",\n    \"budget\": null,\n    \"currency_code\": \"USD\",\n    \"category\": \"Warm\",\n    \"intent\": \"Partnership\",\n    \"summary\": \"The lead inquired about potential collaborations but did not specify urgency.\",\n    \"upload_date\": \"10/10/2025\",\n    \"submission_type\" : \"Excel File\"\n  }\n]"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        1568,
+        368
+      ],
+      "id": "ae66188d-ec05-4576-83d3-d466fadf2f34",
+      "name": "Excel File AI Agent"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        1504,
+        512
+      ],
+      "id": "5f2b01e7-0d08-4c88-9399-50d1b8c62229",
+      "name": "Gemini - Excel File",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "7e66E4T3wvo3ayA4",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        1280,
+        144
+      ],
+      "id": "5bb03541-ad43-4b94-bf2c-db2365abe156",
+      "name": "Gemini - Manual File",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "7e66E4T3wvo3ayA4",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "binaryPropertyName": "file",
+        "options": {
+          "headerRow": true
+        }
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        1040,
+        352
+      ],
+      "id": "65810644-be04-4bec-9b84-47a1a97d49f1",
+      "name": "Read Excel"
+    },
+    {
+      "parameters": {
+        "batchSize": 10000,
+        "options": {
+          "reset": false
+        }
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1200,
+        352
+      ],
+      "id": "bda5b860-9b69-4912-99bd-a4723758d5cf",
+      "name": "Loop Rows"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "6b4331d4-52ce-4751-b7bd-d264557daea8",
+              "name": "prompt",
+              "value": "={{ JSON.stringify({\n  name: $json.Name ?? '',\n  email: $json.Email ?? '',\n  message: $json.Message ?? '',\n  budget: $json.Budget ?? null,\n  currency_code: String($json.Currency ?? 'USD').trim().toUpperCase(),\n  submission_type: 'Excel File'\n}, null, 2) }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1408,
+        368
+      ],
+      "id": "abb38dcf-c093-4864-b990-b39d7302bc3e",
+      "name": "Build Prompt"
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{$json.prompt}}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        1648,
+        496
+      ],
+      "id": "94eba797-e84c-43f6-ab42-5926cf4c0bbe",
+      "name": "Memory (Excel)"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nconst now = new Date();\nconst formattedDate =\n  `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}`;\n\nconst results = [];\n// Trusted tenant context injected by crm-lead-intake.\n// Never take workspace_id from the AI classifier output.\nconst workspaceId = $('Webhook').first().json.body?.workspace_id || null;\n\nfor (const item of items) {\n  let raw = item.json.output;\n\n  if (!raw) continue;\n\n  raw = raw.replace(/```json|```/g, '').trim();\n\n  let parsed;\n\n  try {\n    parsed = JSON.parse(raw);\n  } catch (error) {\n    console.error('JSON parse failed:', error);\n    continue;\n  }\n\n  const leads = Array.isArray(parsed) ? parsed : [parsed];\n\n  for (const lead of leads) {\n    const rawCurrency = String(\n      lead.currency_code || 'USD'\n    ).trim().toUpperCase();\n\n    const currencyCode =\n      /^[A-Z]{3}$/.test(rawCurrency)\n        ? rawCurrency\n        : 'USD';\n\n    results.push({\n      json: {\n        name: lead.name || '',\n        email: lead.email || '',\n        message: lead.message || lead.notes || '',\n        budget: lead.budget ?? '',\n        currency_code: currencyCode,\n        category: lead.category || '',\n        intent: lead.intent || '',\n        summary: lead.summary || '',\n        date: formattedDate,\n        submission_type: lead.submission_type,\n        workspace_id: workspaceId\n      }\n    });\n  }\n}\n\n// If nothing could be parsed into a usable lead, still emit exactly one item\n// so downstream nodes actually run (n8n never invokes a node connected to an\n// empty output array) and the caller gets a real error instead of a silently\n// dropped request.\nif (results.length === 0) {\n  return [{\n    json: {\n      __intake_ok: false,\n      __intake_stage: 'classification',\n      __intake_error: 'The AI classifier did not return a usable result for this submission, so nothing was saved.',\n    },\n  }];\n}\n\nreturn results.map((item) => ({\n  json: { ...item.json, __intake_ok: true },\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        256
+      ],
+      "id": "b9b10396-1f03-404b-9ff4-2df1957cb131",
+      "name": "Normalize Output"
+    },
+    {
+      "parameters": {
+        "tableId": "leads",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "name",
+              "fieldValue": "={{ $json.name }}"
+            },
+            {
+              "fieldId": "email",
+              "fieldValue": "={{ $json.email }}"
+            },
+            {
+              "fieldId": "message",
+              "fieldValue": "={{ $json.message }}"
+            },
+            {
+              "fieldId": "budget",
+              "fieldValue": "={{ $json.budget }}"
+            },
+            {
+              "fieldId": "category",
+              "fieldValue": "={{ $json.category }}"
+            },
+            {
+              "fieldId": "intent",
+              "fieldValue": "={{ $json.intent }}"
+            },
+            {
+              "fieldId": "summary",
+              "fieldValue": "={{ $json.summary }}"
+            },
+            {
+              "fieldId": "created_at",
+              "fieldValue": "={{ $json.date }}"
+            },
+            {
+              "fieldId": "source",
+              "fieldValue": "={{ $json.submission_type }}"
+            },
+            {
+              "fieldId": "currency_code",
+              "fieldValue": "={{ $json.currency_code }}"
+            },
+            {
+              "fieldId": "workspace_id",
+              "fieldValue": "={{ $json.workspace_id }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2464,
+        240
+      ],
+      "id": "0322b9f7-579e-4e44-86f8-628e3a13926f",
+      "name": "Save to Supabase",
+      "alwaysOutputData": false,
+      "credentials": {
+        "supabaseApi": {
+          "id": "OEZuUDRlC3aAzrrX",
+          "name": "Supabase account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "authentication": "airtableOAuth2Api",
+        "operation": "upsert",
+        "base": {
+          "__rl": true,
+          "value": "appNwQBtRTGoMsrNt",
+          "mode": "list",
+          "cachedResultName": "Smart CRM Database",
+          "cachedResultUrl": "https://airtable.com/appNwQBtRTGoMsrNt"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblDgoTaFZIiGnDgC",
+          "mode": "list",
+          "cachedResultName": "Leads",
+          "cachedResultUrl": "https://airtable.com/appNwQBtRTGoMsrNt/tblDgoTaFZIiGnDgC"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.id }}",
+            "Name": "={{ $json.name }}",
+            "Email": "={{ $json.email }}",
+            "Category": "={{ $json.category }}",
+            "Source": "={{ $json.source }}",
+            "Intent": "={{ $json.intent }}",
+            "AI Notes": "={{ $json.summary }}",
+            "Date Added": "={{ $json.date_added }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false
+            },
+            {
+              "id": "Name",
+              "displayName": "Name",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Email",
+              "displayName": "Email",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Category",
+              "displayName": "Category",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "Hot",
+                  "value": "Hot"
                 },
-    "connections":  {
-                        "Webhook":  {
-                                        "main":  [
-                                                     [
-                                                         {
-                                                             "node":  "If",
-                                                             "type":  "main",
-                                                             "index":  0
-                                                         }
-                                                     ]
-                                                 ]
-                                    },
-                        "If":  {
-                                   "main":  [
-                                                [
-                                                    {
-                                                        "node":  "Manual Adding AI Agent",
-                                                        "type":  "main",
-                                                        "index":  0
-                                                    }
-                                                ],
-                                                [
-                                                    {
-                                                        "node":  "Read Excel",
-                                                        "type":  "main",
-                                                        "index":  0
-                                                    }
-                                                ]
-                                            ]
-                               },
-                        "Manual Adding AI Agent":  {
-                                                       "main":  [
-                                                                    [
-                                                                        {
-                                                                            "node":  "Normalize Output",
-                                                                            "type":  "main",
-                                                                            "index":  0
-                                                                        }
-                                                                    ]
-                                                                ]
-                                                   },
-                        "Excel File AI Agent":  {
-                                                    "main":  [
-                                                                 [
-                                                                     {
-                                                                         "node":  "Normalize Output",
-                                                                         "type":  "main",
-                                                                         "index":  0
-                                                                     }
-                                                                 ]
-                                                             ]
-                                                },
-                        "Gemini - Excel File":  {
-                                                    "ai_languageModel":  [
-                                                                             [
-                                                                                 {
-                                                                                     "node":  "Excel File AI Agent",
-                                                                                     "type":  "ai_languageModel",
-                                                                                     "index":  0
-                                                                                 }
-                                                                             ]
-                                                                         ]
-                                                },
-                        "Gemini - Manual File":  {
-                                                     "ai_languageModel":  [
-                                                                              [
-                                                                                  {
-                                                                                      "node":  "Manual Adding AI Agent",
-                                                                                      "type":  "ai_languageModel",
-                                                                                      "index":  0
-                                                                                  }
-                                                                              ]
-                                                                          ]
-                                                 },
-                        "Read Excel":  {
-                                           "main":  [
-                                                        [
-                                                            {
-                                                                "node":  "Loop Rows",
-                                                                "type":  "main",
-                                                                "index":  0
-                                                            }
-                                                        ]
-                                                    ]
-                                       },
-                        "Loop Rows":  {
-                                          "main":  [
-                                                       [
-
-                                                       ],
-                                                       [
-                                                           {
-                                                               "node":  "Build Prompt",
-                                                               "type":  "main",
-                                                               "index":  0
-                                                           }
-                                                       ]
-                                                   ]
-                                      },
-                        "Build Prompt":  {
-                                             "main":  [
-                                                          [
-                                                              {
-                                                                  "node":  "Excel File AI Agent",
-                                                                  "type":  "main",
-                                                                  "index":  0
-                                                              }
-                                                          ]
-                                                      ]
-                                         },
-                        "Memory (Excel)":  {
-                                               "ai_memory":  [
-                                                                 [
-                                                                     {
-                                                                         "node":  "Excel File AI Agent",
-                                                                         "type":  "ai_memory",
-                                                                         "index":  0
-                                                                     }
-                                                                 ]
-                                                             ]
-                                           },
-                        "Normalize Output":  {
-                                                 "main":  [
-                                                              [
-                                                                  {
-                                                                      "node":  "Save to Supabase",
-                                                                      "type":  "main",
-                                                                      "index":  0
-                                                                  }
-                                                              ]
-                                                          ]
-                                             },
-                        "Save to Supabase":  {
-                                                 "main":  [
-                                                              [
-                                                                  {
-                                                                      "node":  "Upsert to Airtable",
-                                                                      "type":  "main",
-                                                                      "index":  0
-                                                                  }
-                                                              ]
-                                                          ]
-                                             },
-                        "Memory - Manual":  {
-                                                "ai_memory":  [
-                                                                  [
-                                                                      {
-                                                                          "node":  "Manual Adding AI Agent",
-                                                                          "type":  "ai_memory",
-                                                                          "index":  0
-                                                                      }
-                                                                  ]
-                                                              ]
-                                            }
-                    },
-    "active":  false,
-    "settings":  {
-                     "executionOrder":  "v1"
-                 },
-    "versionId":  "ad9701d7-ae7c-4e07-ad3f-94038fc880d1",
-    "meta":  {
-                 "templateCredsSetupCompleted":  true,
-                 "instanceId":  "061ff282924a921b345e6b53ba062735bec4c660dc57e45eb336089e2c10832f"
-             },
-    "id":  "mQeq8mvrpelJV4x4",
-    "tags":  [
-
-             ]
+                {
+                  "name": "Warm",
+                  "value": "Warm"
+                },
+                {
+                  "name": "Cold",
+                  "value": "Cold"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Source",
+              "displayName": "Source",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Intent",
+              "displayName": "Intent",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "AI Notes",
+              "displayName": "AI Notes",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Date Added",
+              "displayName": "Date Added",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "dateTime",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        3104,
+        224
+      ],
+      "id": "cf68171e-4c67-43c6-89bd-f3e8eef58e40",
+      "name": "Upsert to Airtable",
+      "credentials": {
+        "airtableOAuth2Api": {
+          "id": "BmYf21HdS9fB8ij7",
+          "name": "Airtable account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ JSON.stringify($json.body, null, 2) }}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        1440,
+        144
+      ],
+      "id": "bc260992-5ac2-4348-b454-ea2c7e03a15b",
+      "name": "Memory - Manual"
+    },
+    {
+      "parameters": {
+        "content": "## Excel File Path\n",
+        "height": 352,
+        "width": 864,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        992,
+        288
+      ],
+      "typeVersion": 1,
+      "id": "8650559c-3ce0-47f3-b993-4e89c43790b0",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "content": "## Transform & Persist\n",
+        "height": 208,
+        "width": 1024,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1920,
+        208
+      ],
+      "typeVersion": 1,
+      "id": "de3e1dd3-a312-4041-a1f2-5599dabd1f13",
+      "name": "Sticky Note3"
+    },
+    {
+      "parameters": {
+        "content": "## Manual Add Path\n",
+        "height": 320,
+        "width": 432,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1232,
+        -48
+      ],
+      "typeVersion": 1,
+      "id": "7d38415e-5c1a-4118-9fa7-922741ea995b",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "content": "## Inbound & Routing\n",
+        "height": 192,
+        "width": 416,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        528,
+        208
+      ],
+      "typeVersion": 1,
+      "id": "1bcc7bf2-15c3-4d9f-8d35-68f329da8e21",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "c1a1f001-1111-4a11-8a11-111111111111",
+              "leftValue": "={{ $json.__intake_ok }}",
+              "operator": {
+                "name": "filter.operator.equals",
+                "operation": "equals",
+                "type": "boolean"
+              },
+              "rightValue": true
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          }
+        },
+        "options": {}
+      },
+      "id": "90ec7b79-dec2-4e2f-9b3d-4af32c5e8027",
+      "name": "Route Classification OK",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2208,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all().map((item) => item.json);\n\nreturn [{\n  json: {\n    ok: true,\n    submission_type: items[0]?.source ?? null,\n    saved_count: items.length,\n    leads: items.map((lead) => ({\n      id: lead.id ?? null,\n      public_id: lead.public_id ?? null,\n      name: lead.name ?? null,\n      email: lead.email ?? null,\n      category: lead.category ?? null,\n      intent: lead.intent ?? null,\n      routing_status: lead.routing_status ?? null,\n      currency_code: lead.currency_code ?? null,\n      budget: lead.budget ?? null,\n    })),\n  },\n}];"
+      },
+      "id": "6e16c467-881b-46d8-a746-98abe425fd31",
+      "name": "Build Success Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2720,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "d70d497e-2cb4-499e-9688-9edd6ecb74ba",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        2912,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst first = items[0]?.json || {};\n\nlet stage = 'unknown';\nlet message = 'The lead could not be processed.';\n\nif (typeof first.__intake_ok !== 'undefined') {\n  stage = first.__intake_stage || 'classification';\n  message = first.__intake_error || message;\n} else {\n  stage = 'persistence';\n  message = (first.error && (first.error.message || first.error.description))\n    || first.message\n    || 'The lead could not be saved to the CRM database.';\n}\n\nreturn [{\n  json: { ok: false, stage, error: message },\n}];"
+      },
+      "id": "38dc5db9-946a-4398-a9c7-f00cdef84b76",
+      "name": "Build Error Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2720,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 502
+        }
+      },
+      "id": "e90fcd23-261d-4922-9bfd-19326dde00e7",
+      "name": "Respond Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        2880,
+        400
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Manual Adding AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Read Excel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Adding AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Normalize Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Excel File AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Normalize Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini - Excel File": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Excel File AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini - Manual File": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Manual Adding AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Excel": {
+      "main": [
+        [
+          {
+            "node": "Loop Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Rows": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Prompt": {
+      "main": [
+        [
+          {
+            "node": "Excel File AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Memory (Excel)": {
+      "ai_memory": [
+        [
+          {
+            "node": "Excel File AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Memory - Manual": {
+      "ai_memory": [
+        [
+          {
+            "node": "Manual Adding AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Classification OK": {
+      "main": [
+        [
+          {
+            "node": "Save to Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Supabase": {
+      "main": [
+        [
+          {
+            "node": "Build Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Success Response": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond Success": {
+      "main": [
+        [
+          {
+            "node": "Upsert to Airtable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Error Response": {
+      "main": [
+        [
+          {
+            "node": "Respond Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Output": {
+      "main": [
+        [
+          {
+            "node": "Route Classification OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true,
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "fb3b50c9-a34c-43e9-a7fe-4c7eb6e8a74c",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "aiBuilderAssisted": true,
+    "builderVariant": "mcp",
+    "instanceId": "6e141d857ee29108e1eda21f502bb9481f8bdb0a416f89f9d6fc73d8b79e9915"
+  },
+  "nodeGroups": [],
+  "id": "wQnh4E5UDYQbEFl9",
+  "tags": []
 }
