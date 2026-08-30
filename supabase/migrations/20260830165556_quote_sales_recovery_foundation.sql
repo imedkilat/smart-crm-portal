@@ -124,6 +124,8 @@ with check (
   (select private.is_workspace_member(lead_quotes.workspace_id))
 );
 
+-- Hard delete is intentionally unavailable in v1. Terminal quote states preserve
+-- sales/audit history and quote revisions can supersede prior rows.
 drop policy if exists lead_quotes_member_delete on public.lead_quotes;
 
 revoke all on table public.lead_quotes from anon;
@@ -177,6 +179,10 @@ drop trigger if exists trg_lead_quotes_touch on public.lead_quotes;
 create trigger trg_lead_quotes_touch
 before update on public.lead_quotes
 for each row execute function private.touch_lead_quote();
+
+-- ---------------------------------------------------------------------------
+-- Workspace alert preferences (non-secret configuration only)
+-- ---------------------------------------------------------------------------
 
 create table if not exists public.workspace_quote_alert_settings (
   workspace_id uuid primary key
@@ -234,6 +240,7 @@ with check (
   ))
 );
 
+-- Rows are seeded by server-owned migration/trigger; browser insert/delete is disabled.
 drop policy if exists workspace_quote_alert_settings_member_insert
   on public.workspace_quote_alert_settings;
 drop policy if exists workspace_quote_alert_settings_member_delete
@@ -303,6 +310,10 @@ create trigger trg_workspaces_ensure_quote_alert_settings
 after insert on public.workspaces
 for each row execute function private.ensure_workspace_quote_alert_settings();
 
+-- ---------------------------------------------------------------------------
+-- Idempotent internal alert ledger
+-- ---------------------------------------------------------------------------
+
 create table if not exists public.quote_alerts (
   id uuid primary key default gen_random_uuid(),
   public_id text not null unique
@@ -367,6 +378,8 @@ using (
   (select private.is_workspace_member(quote_alerts.workspace_id))
 );
 
+-- Delivery creation/state transitions are automation-owned. A future acknowledgement
+-- action should use a narrow server-side RPC/Edge Function rather than broad browser UPDATE.
 drop policy if exists quote_alerts_member_insert on public.quote_alerts;
 drop policy if exists quote_alerts_member_update on public.quote_alerts;
 drop policy if exists quote_alerts_member_delete on public.quote_alerts;
