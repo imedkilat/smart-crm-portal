@@ -34,6 +34,12 @@ type NavItem = {
   icon: string
 }
 
+type AccountIdentity = {
+  displayName: string
+  greetingName: string | null
+  roleLabel: string
+}
+
 const NEW_LEAD_WINDOW_MS = 30 * 60 * 1000
 
 const navItems: NavItem[] = [
@@ -65,6 +71,26 @@ function initials(name: string | null) {
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase())
     .join('')
+}
+
+function preferredAccountName(metadata: Record<string, unknown> | undefined) {
+  for (const key of ['full_name', 'name', 'display_name']) {
+    const value = metadata?.[key]
+    if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+  return null
+}
+
+function accountFirstName(name: string | null) {
+  if (!name) return null
+  return name.trim().split(/\s+/)[0] || null
+}
+
+function formatRole(role: string | null | undefined) {
+  if (!role) return 'Workspace member'
+  return role
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
 function statusValue(lead: Lead) {
@@ -112,6 +138,11 @@ export default function App() {
   const [weeklySummary, setWeeklySummary] = useState<WeeklySummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [accountIdentity, setAccountIdentity] = useState<AccountIdentity>({
+    displayName: 'Signed-in user',
+    greetingName: null,
+    roleLabel: 'Workspace member',
+  })
 
   useEffect(() => {
     const titles: Record<Page, string> = {
@@ -128,6 +159,47 @@ export default function App() {
     }
     document.title = `${titles[page]} · Smart CRM`
   }, [page, route.leadPublicId])
+
+  useEffect(() => {
+    let active = true
+
+    async function loadAccountIdentity() {
+      if (!supabase) return
+
+      const { data: userResult, error: userError } = await supabase.auth.getUser()
+      const user = userResult.user
+      if (!active || userError || !user) return
+
+      const preferredName = preferredAccountName(user.user_metadata)
+      const displayName = preferredName || user.email || 'Signed-in user'
+      let roleLabel = 'Workspace member'
+
+      const { data: memberships, error: membershipError } = await supabase
+        .from('workspace_members')
+        .select('role')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: true })
+        .limit(2)
+
+      if (!membershipError && memberships?.length === 1) {
+        roleLabel = formatRole(memberships[0].role)
+      } else if (!membershipError && memberships && memberships.length > 1) {
+        roleLabel = 'Multiple workspaces'
+      }
+
+      if (!active) return
+      setAccountIdentity({
+        displayName,
+        greetingName: accountFirstName(preferredName),
+        roleLabel,
+      })
+    }
+
+    void loadAccountIdentity()
+    return () => {
+      active = false
+    }
+  }, [])
 
   useEffect(() => {
     if (page !== 'dashboard' && page !== 'analytics') return
@@ -251,10 +323,10 @@ export default function App() {
           <GlobalSearch onLeadUpdated={handleLeadUpdated} />
           <div className="topbar-meta">
             <span className="lead-count">{metrics.total} leads</span>
-            <div className="owner-avatar">EK</div>
+            <div className="owner-avatar">{initials(accountIdentity.displayName)}</div>
             <div className="owner-copy">
-              <strong>Ed Rowell Kilat</strong>
-              <span>Owner</span>
+              <strong>{accountIdentity.displayName}</strong>
+              <span>{accountIdentity.roleLabel}</span>
             </div>
           </div>
         </header>
@@ -268,6 +340,7 @@ export default function App() {
               distribution={distribution}
               weeklySummary={weeklySummary}
               recentLeads={recentLeads}
+              greetingName={accountIdentity.greetingName}
               setPage={navigate}
               onOpenLead={openLead}
             />
@@ -324,6 +397,7 @@ function DashboardPage({
   distribution,
   weeklySummary,
   recentLeads,
+  greetingName,
   setPage,
   onOpenLead,
 }: {
@@ -333,6 +407,7 @@ function DashboardPage({
   distribution: { label: string; count: number; className: string }[]
   weeklySummary: WeeklySummary | null
   recentLeads: Lead[]
+  greetingName: string | null
   setPage: (page: Page) => void
   onOpenLead: (lead: Lead) => void
 }) {
@@ -348,7 +423,7 @@ function DashboardPage({
       <section className="page-heading">
         <div>
           <div className="eyebrow">SMART CRM · COMMERCIAL BUILD</div>
-          <h1>Good morning, Ed</h1>
+          <h1>{greetingName ? `Good morning, ${greetingName}` : 'Good morning'}</h1>
           <p>Here&apos;s what&apos;s happening with your lead pipeline.</p>
         </div>
         <div className="heading-actions">
