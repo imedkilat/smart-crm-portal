@@ -23,6 +23,13 @@ function passwordProblem(value: string) {
   return ''
 }
 
+function fullNameProblem(value: string) {
+  const trimmed = value.trim()
+  if (trimmed.length < 2) return 'Enter your full name.'
+  if (trimmed.length > 100) return 'Keep your name to 100 characters or fewer.'
+  return ''
+}
+
 function workspaceProblem(value: string) {
   const trimmed = value.trim()
   if (trimmed.length < 2) return 'Enter a workspace name with at least 2 characters.'
@@ -34,6 +41,7 @@ export default function Login({ onSignedIn }: { onSignedIn?: () => void }) {
   const [view, setView] = useState<View>('signin')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [fullName, setFullName] = useState('')
   const [workspaceName, setWorkspaceName] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [resetEmail, setResetEmail] = useState('')
@@ -45,6 +53,7 @@ export default function Login({ onSignedIn }: { onSignedIn?: () => void }) {
   const [emailError, setEmailError] = useState('')
   const [passwordError, setPasswordError] = useState('')
   const [confirmPasswordError, setConfirmPasswordError] = useState('')
+  const [fullNameError, setFullNameError] = useState('')
   const [workspaceError, setWorkspaceError] = useState('')
 
   async function handleSignIn(event: FormEvent) {
@@ -72,21 +81,23 @@ export default function Login({ onSignedIn }: { onSignedIn?: () => void }) {
 
   async function handleSignUp(event: FormEvent) {
     event.preventDefault()
+    const nextFullNameError = fullNameProblem(fullName)
     const nextWorkspaceError = workspaceProblem(workspaceName)
     const nextEmailError = emailProblem(email)
     const nextPasswordError = passwordProblem(password)
     const nextConfirmError = confirmPassword === password ? '' : 'Passwords do not match.'
 
+    setFullNameError(nextFullNameError)
     setWorkspaceError(nextWorkspaceError)
     setEmailError(nextEmailError)
     setPasswordError(nextPasswordError)
     setConfirmPasswordError(nextConfirmError)
     setError('')
 
-    if (nextWorkspaceError || nextEmailError || nextPasswordError || nextConfirmError) return
+    if (nextFullNameError || nextWorkspaceError || nextEmailError || nextPasswordError || nextConfirmError) return
 
     setSubmitting(true)
-    const result = await signUp(email, password, workspaceName)
+    const result = await signUp(email, password, workspaceName, fullName)
     setSubmitting(false)
 
     if (!result.ok) {
@@ -132,6 +143,7 @@ export default function Login({ onSignedIn }: { onSignedIn?: () => void }) {
     setEmailError('')
     setPasswordError('')
     setConfirmPasswordError('')
+    setFullNameError('')
     setWorkspaceError('')
   }
 
@@ -143,6 +155,7 @@ export default function Login({ onSignedIn }: { onSignedIn?: () => void }) {
 
   function openSignUp() {
     clearValidation()
+    setFullName('')
     setPassword('')
     setConfirmPassword('')
     setView('signup')
@@ -305,6 +318,23 @@ export default function Login({ onSignedIn }: { onSignedIn?: () => void }) {
               {error && <div className="auth-error" role="alert">{error}</div>}
 
               <form className="auth-form" onSubmit={handleSignUp} noValidate>
+                <label className="auth-field">
+                  <span>Full name</span>
+                  <input
+                    type="text"
+                    autoComplete="name"
+                    placeholder="e.g. Ed Rowell Kilat"
+                    value={fullName}
+                    className={fullNameError ? 'invalid' : ''}
+                    onChange={(event) => {
+                      setFullName(event.target.value)
+                      setFullNameError('')
+                      setError('')
+                    }}
+                  />
+                  {fullNameError && <small>{fullNameError}</small>}
+                </label>
+
                 <label className="auth-field">
                   <span>Workspace name</span>
                   <input
