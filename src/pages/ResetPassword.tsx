@@ -1,8 +1,9 @@
-import { useState, type FormEvent } from 'react'
-import { updatePassword } from '../lib/auth'
+import { useEffect, useState, type FormEvent } from 'react'
+import { getAccountDisplayName, updatePassword } from '../lib/auth'
 import '../auth.css'
 
 export default function ResetPassword() {
+  const [fullName, setFullName] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -10,9 +11,25 @@ export default function ResetPassword() {
   const [error, setError] = useState('')
   const [done, setDone] = useState(false)
 
+  useEffect(() => {
+    let active = true
+    void getAccountDisplayName().then((name) => {
+      if (active && name) setFullName(name)
+    })
+    return () => {
+      active = false
+    }
+  }, [])
+
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
     setError('')
+
+    const trimmedName = fullName.trim()
+    if (trimmedName.length < 2 || trimmedName.length > 100) {
+      setError('Enter your full name using 2 to 100 characters.')
+      return
+    }
 
     if (password.length < 8) {
       setError('Use at least 8 characters for your new password.')
@@ -25,7 +42,7 @@ export default function ResetPassword() {
     }
 
     setSubmitting(true)
-    const result = await updatePassword(password)
+    const result = await updatePassword(password, trimmedName)
     setSubmitting(false)
 
     if (!result.ok) {
@@ -46,13 +63,27 @@ export default function ResetPassword() {
 
         {!done ? (
           <>
-            <span className="auth-form-kicker">SECURE RECOVERY</span>
-            <h2>Choose a new password</h2>
-            <p className="auth-subtitle">Set a new password for your Smart CRM workspace account.</p>
+            <span className="auth-form-kicker">ACCOUNT SECURITY</span>
+            <h2>Set up your account</h2>
+            <p className="auth-subtitle">Confirm your name and choose a secure password for your Smart CRM workspace account.</p>
 
             {error && <div className="auth-error" role="alert">{error}</div>}
 
-            <form className="auth-form" onSubmit={handleSubmit}>
+            <form className="auth-form" onSubmit={handleSubmit} noValidate>
+              <label className="auth-field">
+                <span>Full name</span>
+                <input
+                  type="text"
+                  autoComplete="name"
+                  placeholder="e.g. Alex Morgan"
+                  value={fullName}
+                  onChange={(event) => {
+                    setFullName(event.target.value)
+                    setError('')
+                  }}
+                />
+              </label>
+
               <label className="auth-field">
                 <span>New password</span>
                 <div className="auth-password-wrap">
@@ -86,16 +117,16 @@ export default function ResetPassword() {
               </label>
 
               <button className="auth-submit" type="submit" disabled={submitting}>
-                {submitting ? <><span className="auth-spinner" /> Updating…</> : 'Update password'}
+                {submitting ? <><span className="auth-spinner" /> Saving…</> : 'Save account'}
               </button>
             </form>
           </>
         ) : (
           <div className="auth-success-view">
             <div className="auth-success-icon">✓</div>
-            <span className="auth-form-kicker">PASSWORD UPDATED</span>
+            <span className="auth-form-kicker">ACCOUNT UPDATED</span>
             <h2>You&apos;re all set</h2>
-            <p className="auth-subtitle">Your password has been updated successfully.</p>
+            <p className="auth-subtitle">Your name and password have been saved successfully.</p>
             <button className="auth-submit" type="button" onClick={() => window.location.assign('/login')}>Return to sign in</button>
           </div>
         )}
