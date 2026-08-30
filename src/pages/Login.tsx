@@ -323,7 +323,7 @@ export default function Login({ onSignedIn }: { onSignedIn?: () => void }) {
                   <input
                     type="text"
                     autoComplete="name"
-                    placeholder="e.g. Ed Rowell Kilat"
+                    placeholder="e.g. John Doe"
                     value={fullName}
                     className={fullNameError ? 'invalid' : ''}
                     onChange={(event) => {
@@ -340,7 +340,7 @@ export default function Login({ onSignedIn }: { onSignedIn?: () => void }) {
                   <input
                     type="text"
                     autoComplete="organization"
-                    placeholder="e.g. Kilat Automation"
+                    placeholder="e.g. Acme Sales"
                     value={workspaceName}
                     className={workspaceError ? 'invalid' : ''}
                     onChange={(event) => {
