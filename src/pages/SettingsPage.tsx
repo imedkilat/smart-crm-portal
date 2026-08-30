@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import type { Database } from '../types/database'
 import WorkspaceBrandingPanel from '../components/WorkspaceBrandingPanel'
 import MessageTemplatesPanel from '../components/MessageTemplatesPanel'
+import SubscriberProvisioningPanel from '../components/SubscriberProvisioningPanel'
 import ArchivePage from './ArchivePage'
 
 const LEAD_WEBHOOK = import.meta.env.VITE_N8N_LEAD_WEBHOOK_URL || 'https://tolakautomations.app.n8n.cloud/webhook/799b1d66-0a5f-44b0-8f43-600ea4775979'
@@ -32,6 +34,12 @@ export default function SettingsPage({ onOpenRunLog, onLeadRestored }: Props) {
   const [routingEventCount, setRoutingEventCount] = useState<number | null>(null)
   const [ownerEmail, setOwnerEmail] = useState<string | null>(null)
   const [ownerRole, setOwnerRole] = useState<string | null>(null)
+  const [planName, setPlanName] = useState<string | null>(null)
+  const [planCode, setPlanCode] = useState<string | null>(null)
+  const [subscriptionStatus, setSubscriptionStatus] = useState<string | null>(null)
+  const [billingCycle, setBillingCycle] = useState<string | null>(null)
+  const [deploymentType, setDeploymentType] = useState<string | null>(null)
+  const [isPlatformAdmin, setIsPlatformAdmin] = useState(false)
   const [checkedAt, setCheckedAt] = useState<Date | null>(null)
   const [showArchive, setShowArchive] = useState(false)
 
@@ -52,15 +60,48 @@ export default function SettingsPage({ onOpenRunLog, onLeadRestored }: Props) {
 
     const user = userResult.data.user
     let membershipRole: string | null = null
+    let workspaceId: string | null = null
     if (user) {
       const { data: membership } = await supabase
         .from('workspace_members')
-        .select('role')
+        .select('role, workspace_id')
         .eq('user_id', user.id)
         .order('created_at', { ascending: true })
         .limit(1)
         .maybeSingle()
       membershipRole = membership?.role || null
+      workspaceId = membership?.workspace_id || null
+    }
+
+    let nextPlanName: string | null = null
+    let nextPlanCode: string | null = null
+    let nextSubscriptionStatus: string | null = null
+    let nextBillingCycle: string | null = null
+    let nextDeploymentType: string | null = null
+
+    if (workspaceId) {
+      // Billing tables landed after the checked-in generated Database type.
+      // Keep the query locally typed until the next schema type generation.
+      const billingClient = supabase as unknown as SupabaseClient
+      const { data: subscription } = await billingClient
+        .from('subscriptions')
+        .select('plan_id, status, billing_cycle, deployment_type')
+        .eq('workspace_id', workspaceId)
+        .maybeSingle()
+
+      if (subscription) {
+        nextSubscriptionStatus = String(subscription.status)
+        nextBillingCycle = String(subscription.billing_cycle)
+        nextDeploymentType = String(subscription.deployment_type)
+
+        const { data: plan } = await billingClient
+          .from('plans')
+          .select('code, name')
+          .eq('id', subscription.plan_id)
+          .maybeSingle()
+        nextPlanName = plan?.name ? String(plan.name) : null
+        nextPlanCode = plan?.code ? String(plan.code) : null
+      }
     }
 
     setDatabaseHealthy(!leadResult.error && !archiveResult.error && !eventResult.error)
@@ -69,6 +110,12 @@ export default function SettingsPage({ onOpenRunLog, onLeadRestored }: Props) {
     setRoutingEventCount(eventResult.count ?? null)
     setOwnerEmail(user?.email || null)
     setOwnerRole(membershipRole)
+    setPlanName(nextPlanName)
+    setPlanCode(nextPlanCode)
+    setSubscriptionStatus(nextSubscriptionStatus)
+    setBillingCycle(nextBillingCycle)
+    setDeploymentType(nextDeploymentType)
+    setIsPlatformAdmin(user?.app_metadata?.platform_role === 'platform_admin')
     setCheckedAt(new Date())
     setChecking(false)
   }, [])
@@ -125,6 +172,7 @@ export default function SettingsPage({ onOpenRunLog, onLeadRestored }: Props) {
 
       <WorkspaceBrandingPanel />
       <MessageTemplatesPanel />
+      {isPlatformAdmin ? <SubscriberProvisioningPanel /> : null}
 
       <section className="settings-layout">
         <article className="panel settings-section-card">
@@ -143,6 +191,18 @@ export default function SettingsPage({ onOpenRunLog, onLeadRestored }: Props) {
         </article>
 
         <aside className="settings-side-column">
+          <article className="panel settings-section-card compact-card">
+            <span className="mini-label">SUBSCRIPTION</span>
+            <div className="settings-plan-heading">
+              <h2>{planName || 'Plan unavailable'}</h2>
+              {subscriptionStatus ? <span className={`subscription-status ${subscriptionStatus}`}>{subscriptionStatus}</span> : null}
+            </div>
+            <div className="owner-settings-row"><span>Entitlement</span><strong>{planCode || 'Unavailable'}</strong></div>
+            <div className="owner-settings-row"><span>Billing</span><strong>{billingCycle || 'Unavailable'}</strong></div>
+            <div className="owner-settings-row"><span>Deployment</span><strong>{deploymentType || 'Unavailable'}</strong></div>
+            <p className="settings-note">Follow-up automation is available on Starter, Pro and White Label plans when workspace follow-up settings are enabled.</p>
+          </article>
+
           <article className="panel settings-section-card compact-card">
             <span className="mini-label">WORKSPACE ACCESS</span>
             <h2>Workspace identity</h2>
