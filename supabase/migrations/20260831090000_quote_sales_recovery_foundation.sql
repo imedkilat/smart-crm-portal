@@ -47,8 +47,7 @@ create table if not exists public.lead_quotes (
         'not_interested'
       )
     ),
-  supersedes_quote_id uuid
-    references public.lead_quotes(id) on delete set null,
+  supersedes_quote_id uuid,
   created_by uuid
     references auth.users(id) on delete set null
     default auth.uid(),
@@ -61,6 +60,12 @@ create table if not exists public.lead_quotes (
     foreign key (workspace_id, lead_id)
     references public.leads(workspace_id, id)
     on delete cascade,
+  constraint lead_quotes_workspace_id_id_lead_unique
+    unique (workspace_id, id, lead_id),
+  constraint lead_quotes_supersedes_same_lead_fkey
+    foreign key (workspace_id, supersedes_quote_id, lead_id)
+    references public.lead_quotes(workspace_id, id, lead_id)
+    on delete restrict,
   constraint lead_quotes_receipt_after_send_check
     check (receipt_confirmed_at is null or sent_at is not null),
   constraint lead_quotes_decision_after_send_check
@@ -72,7 +77,7 @@ create table if not exists public.lead_quotes (
 comment on table public.lead_quotes is
   'Workspace-scoped quote versions linked to CRM leads. Quote lifecycle is internal CRM state; outbound customer delivery is handled elsewhere.';
 comment on column public.lead_quotes.supersedes_quote_id is
-  'Optional previous quote version superseded by this row. Revisions are separate rows rather than overwriting history.';
+  'Optional previous quote version for the same workspace and lead. Revisions are separate rows rather than overwriting history.';
 comment on column public.lead_quotes.last_call_outcome is
   'Current structured sales follow-up outcome. Full outcome history belongs in lead_activities metadata.';
 
@@ -86,10 +91,6 @@ create index if not exists lead_quotes_next_follow_up_idx
   on public.lead_quotes (workspace_id, next_follow_up_at)
   where next_follow_up_at is not null
     and status not in ('accepted', 'declined', 'expired', 'superseded');
-
--- Enables tenant-bound composite references from the alert ledger.
-create unique index if not exists uq_lead_quotes_workspace_id_id_lead_id
-  on public.lead_quotes (workspace_id, id, lead_id);
 
 alter table public.lead_quotes enable row level security;
 
