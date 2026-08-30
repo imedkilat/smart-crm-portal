@@ -39,6 +39,14 @@ function unavailable() {
   return { ok: false, message: 'Supabase authentication is not configured for this environment yet.' } as const
 }
 
+function metadataDisplayName(metadata: Record<string, unknown> | undefined) {
+  for (const key of ['full_name', 'name', 'display_name']) {
+    const value = metadata?.[key]
+    if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+  return ''
+}
+
 export async function signIn(email: string, password: string): Promise<AuthResult> {
   if (!isSupabaseConfigured || !supabase) return unavailable()
 
@@ -50,7 +58,12 @@ export async function signIn(email: string, password: string): Promise<AuthResul
   return error ? { ok: false, message: friendlyError(error.message) } : { ok: true }
 }
 
-export async function signUp(email: string, password: string, workspaceName: string): Promise<SignUpResult> {
+export async function signUp(
+  email: string,
+  password: string,
+  workspaceName: string,
+  fullName: string,
+): Promise<SignUpResult> {
   if (!isSupabaseConfigured || !supabase) return unavailable()
 
   const { data, error } = await supabase.auth.signUp({
@@ -58,6 +71,7 @@ export async function signUp(email: string, password: string, workspaceName: str
     password,
     options: {
       data: {
+        full_name: fullName.trim(),
         workspace_name: workspaceName.trim(),
       },
       emailRedirectTo: `${window.location.origin}/login`,
@@ -82,10 +96,23 @@ export async function sendPasswordReset(email: string): Promise<AuthResult> {
   return error ? { ok: false, message: friendlyError(error.message) } : { ok: true }
 }
 
-export async function updatePassword(password: string): Promise<AuthResult> {
+export async function getAccountDisplayName() {
+  if (!isSupabaseConfigured || !supabase) return ''
+
+  const { data, error } = await supabase.auth.getUser()
+  if (error || !data.user) return ''
+  return metadataDisplayName(data.user.user_metadata)
+}
+
+export async function updatePassword(password: string, fullName?: string): Promise<AuthResult> {
   if (!isSupabaseConfigured || !supabase) return unavailable()
 
-  const { error } = await supabase.auth.updateUser({ password })
+  const trimmedName = fullName?.trim()
+  const attributes = trimmedName
+    ? { password, data: { full_name: trimmedName } }
+    : { password }
+
+  const { error } = await supabase.auth.updateUser(attributes)
   return error ? { ok: false, message: friendlyError(error.message) } : { ok: true }
 }
 
