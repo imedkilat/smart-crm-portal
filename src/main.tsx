@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import App from './App'
 import Login from './pages/Login'
 import ResetPassword from './pages/ResetPassword'
+import QuoteLifecyclePage from './pages/QuoteLifecyclePage'
 import { signOut } from './lib/auth'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 import { ensureWorkspaceOnboarding } from './lib/workspace'
@@ -220,6 +221,23 @@ function AuthRouter() {
 
   if (workspaceState !== 'ready') {
     return <AuthLoading message="Preparing your workspace…" />
+  }
+
+  if (route === '/quotes') {
+    return (
+      <>
+        <QuoteLifecyclePage />
+        <button
+          className="session-signout"
+          type="button"
+          onClick={handleSignOut}
+          disabled={signingOut}
+          aria-label="Sign out of Smart CRM"
+        >
+          {signingOut ? 'Signing out…' : 'Sign out'}
+        </button>
+      </>
+    )
   }
 
   return (
