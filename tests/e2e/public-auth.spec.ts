@@ -9,6 +9,25 @@ test.describe('public auth regression', () => {
     }
   })
 
+  test('public automation lab runs locally without Supabase requests', async ({ page }) => {
+    const supabaseRequests: string[] = []
+    page.on('request', (request) => {
+      try {
+        if (new URL(request.url()).hostname.endsWith('supabase.co')) supabaseRequests.push(request.url())
+      } catch {
+        // Ignore non-URL browser internals.
+      }
+    })
+
+    await page.goto('/demo/automation-lab')
+    await expect(page).toHaveURL(/\/demo\/automation-lab$/)
+    await expect(page.getByRole('heading', { name: 'Build a workflow. Run it safely.' })).toBeVisible()
+    await page.getByRole('button', { name: 'Run workflow →' }).click()
+    await expect(page.getByText('Simulation complete')).toBeVisible()
+    await expect(page.getByText(/0 database writes · 0 n8n calls · 0 provider calls/)).toBeVisible()
+    expect(supabaseRequests).toEqual([])
+  })
+
   test('sign-in form keeps required-field validation', async ({ page }) => {
     await page.goto('/login')
     await page.getByRole('button', { name: 'Sign in', exact: true }).click()
