@@ -152,7 +152,11 @@ export default function QuoteLifecyclePage() {
       setLeads((leadResult.data || []) as LeadRow[])
       const rows = (quoteResult.data || []) as QuoteRow[]
       setQuotes(rows)
-      if (selectedId && !rows.some((row) => row.id === selectedId)) setSelectedId(null)
+      if (selectedId && !rows.some((row) => row.id === selectedId)) {
+        setSelectedId(null)
+      } else if (!selectedId && rows.length) {
+        editQuote(rows[0])
+      }
     }
     setLoading(false)
   }
