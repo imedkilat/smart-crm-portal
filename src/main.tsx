@@ -259,7 +259,8 @@ function AuthRouter() {
 }
 
 function RootRouter() {
-  if (currentRoute() === PUBLIC_AUTOMATION_LAB_ROUTE) {
+  const route = currentRoute()
+  if (route === '/' || route === PUBLIC_AUTOMATION_LAB_ROUTE) {
     return <AutomationLabPage />
   }
   return <AuthRouter />
