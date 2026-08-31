@@ -6,14 +6,13 @@ Catch regressions in the highest-risk product paths without turning the test sui
 
 ## Safety rules
 
-- Pull-request CI runs non-destructive browser checks by default.
-- Authenticated smoke tests are credential-gated and read-only.
+- Pull-request CI runs non-destructive checks only.
 - Never store test credentials in the repository.
 - Never create, update, or delete production leads, quotes, tasks, subscriptions, memberships, or outbound deliveries from the default PR suite.
 - Mutation tests must use dedicated synthetic QA fixtures, explicit idempotency keys, bounded write counts, and post-test verification.
 - Cross-tenant tests must prove denied access without granting temporary memberships or weakening RLS.
 
-## Current phase: foundation
+## Phase 1: foundation — merged
 
 Automated now:
 
@@ -21,18 +20,33 @@ Automated now:
 2. Sign-in required-field validation remains intact.
 3. Workspace signup keeps full-name, workspace-name, email, password, and confirmation requirements.
 4. Password recovery entry remains reachable.
-5. When GitHub Actions secrets are configured, an existing QA account can sign in and read `/dashboard`, `/quotes`, and `/ai-brain` without writes.
+5. A configured QA account can sign in and read `/dashboard`, `/quotes`, and `/ai-brain` without writes.
+6. GitHub Actions runs Chromium regression CI and retains the Playwright report artifact.
 
-## Phase 2: tenant isolation
+## Current phase: Phase 2 tenant isolation
 
-Add two dedicated QA identities in separate workspaces and verify:
+Use two existing non-platform-admin QA identities that each have exactly one workspace membership. Their emails and passwords stay in GitHub Actions secrets and are never hardcoded into the repository.
 
-- each account resolves only its own workspace context;
-- workspace A cannot read workspace B leads, quotes, tasks, settings, or activities;
-- direct Supabase queries using each authenticated session return zero foreign-tenant rows;
-- protected routes do not leak another tenant's cached UI state.
+Automated contract:
 
-No membership mutation is allowed inside the test itself.
+- each account authenticates independently and resolves exactly one visible workspace membership;
+- the two workspace IDs must be different;
+- each account can read its own workspace row;
+- workspace A cannot read workspace B, and workspace B cannot read workspace A;
+- direct authenticated Supabase queries must return an empty result for the foreign workspace across:
+  - `workspace_members`
+  - `leads`
+  - `lead_quotes`
+  - `lead_tasks`
+  - `lead_activities`
+  - `workspace_branding`
+  - `workspace_follow_up_settings`
+  - `workspace_outbound_email_settings`
+  - `workspace_quote_alert_settings`
+
+All of these tables have authenticated SELECT access with RLS enabled, so a foreign-tenant read must be filtered to `[]` without weakening privileges or adding temporary memberships.
+
+No membership or CRM-data mutation is allowed inside this test.
 
 ## Phase 3: controlled automation regression
 
@@ -59,14 +73,16 @@ Avoid brittle exact-text assertions on model prose. Assert scope, record identit
 
 ## CI secrets
 
-Optional authenticated smoke tests use GitHub Actions secrets:
+Phase 2 makes the two-tenant QA gate mandatory in regression CI. Configure these GitHub Actions repository secrets:
 
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
 - `E2E_PRIMARY_EMAIL`
 - `E2E_PRIMARY_PASSWORD`
+- `E2E_SECONDARY_EMAIL`
+- `E2E_SECONDARY_PASSWORD`
 
-If these are absent, credential-gated tests skip while public regression tests still run.
+Use two non-platform-admin accounts in different single-workspace tenants. Do not use the platform-admin identity for either side of the isolation proof.
 
 ## Local commands
 
@@ -74,6 +90,7 @@ If these are absent, credential-gated tests skip while public regression tests s
 npm run test:e2e
 npm run test:e2e:public
 npm run test:e2e:auth
+npm run test:e2e:tenant
 ```
 
 Playwright starts a local production build automatically unless `E2E_BASE_URL` is supplied.
