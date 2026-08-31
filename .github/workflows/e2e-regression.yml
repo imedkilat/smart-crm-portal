@@ -6,11 +6,13 @@ on:
       - 'src/**'
       - 'tests/e2e/**'
       - 'scripts/e2e-controlled-preflight.mjs'
+      - 'scripts/e2e-outbound-idempotency-replay.mjs'
       - 'playwright.config.ts'
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/e2e-regression.yml'
       - '.github/workflows/e2e-controlled-regression.yml'
+      - '.github/workflows/e2e-outbound-idempotency.yml'
   workflow_dispatch:
 
 permissions:
@@ -45,7 +47,9 @@ jobs:
         run: npm run test:e2e:tenant -- --list
 
       - name: Validate controlled regression harness syntax
-        run: node --check scripts/e2e-controlled-preflight.mjs
+        run: |
+          node --check scripts/e2e-controlled-preflight.mjs
+          node --check scripts/e2e-outbound-idempotency-replay.mjs
 
       - name: Require tenant-isolation QA secrets
         shell: bash

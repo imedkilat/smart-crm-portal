@@ -49,37 +49,54 @@ All of these tables have authenticated SELECT access with RLS enabled, so a fore
 
 No membership or CRM-data mutation occurs inside the tenant-isolation test.
 
-## Current phase: Phase 3 controlled automation regression
+## Phase 3: controlled automation regression
 
-Phase 3 starts with a manual-only, read-only production preflight before any new write-capable regression is added.
+### Read-only production preflight — merged and passed
 
-The preflight authenticates both configured QA identities, discovers the one workspace named `Smart CRM Starter QA`, and refuses to proceed unless the operator supplies the exact confirmation phrase:
+The manual `Controlled E2E regression` workflow is merged at squash SHA `a23ce91cf79a9d09fe734b8a3a2650edf53c6441` and passed on `main` in workflow run `33430290598` with confirmation:
 
 `SMART_CRM_SYNTHETIC_QA_ONLY`
 
-The preflight verifies these production safety invariants without insert/update/delete calls:
+The preflight proves the known Starter QA Follow-Up task, quote lifecycle fixture, outbound simulation fixture, disabled outbound state, and disabled quote-alert state without any insert/update/delete/provider call. Independent database verification after the run remained exactly one Follow-Up task, three lead activities, one controlled quote, one outbound delivery, and one outbound attempt.
 
-- Follow-Up settings remain enabled only for the known Starter QA baseline and `max_tasks_per_run = 1`;
-- outbound email remains `enabled = false`, `mode = disabled`, provider unset, and run cap = 1;
-- quote alerts remain disabled;
-- the synthetic Hot lead `followup.qa.lead@qatest.example.com` exists and is not archived;
-- exactly one deterministic Follow-Up task baseline exists for that lead and its automation key/marker are intact;
-- exactly one matching `task_created` activity references that automated task;
-- controlled quote `QA-QUOTE-001` remains USD 4,200, status `sent`, with both sent and next-follow-up timestamps;
-- exactly one quote-created and one quote-updated activity remain scoped to that quote;
-- outbound idempotency baseline `qa-outbound-sim-20260901-001` still resolves to exactly one simulated logical delivery and one simulated attempt;
-- both outbound records retain `network_call_performed = false` and no provider message ID.
+### Current gate: outbound duplicate/idempotency replay
 
-This preflight runs only through the manual `Controlled E2E regression` GitHub Actions workflow. Normal pull-request CI only syntax-checks the controlled harness; it does not execute it.
+The first controlled write-capable-system regression exercises the real `crm-outbound-email` Edge Function without creating new data.
 
-### Next Phase 3 gates
+Why this gate comes before quote mutation:
 
-After the read-only preflight is merged and proven on `main`, add write-capable gates one at a time:
+- authenticated members have INSERT/SELECT/UPDATE access to `lead_quotes`, but no DELETE policy;
+- `lead_activities` also has no DELETE policy;
+- therefore a repeatable quote create/update test would permanently accumulate QA rows unless the regression bypassed normal RLS with privileged cleanup, which is intentionally not allowed.
+
+The outbound replay instead uses the already-existing synthetic logical delivery with idempotency key:
+
+`qa-outbound-sim-20260901-001`
+
+The manual workflow must refuse to run unless the operator supplies:
+
+`SMART_CRM_OUTBOUND_DUPLICATE_QA`
+
+The harness must prove all of the following:
+
+- `Smart CRM Starter QA` is the only configured QA session for the target tenant;
+- outbound settings remain `enabled = false`, `mode = disabled`, provider unset, and run cap = 1;
+- the existing delivery is still simulated, has `attempt_count = 1`, no provider message ID, and `network_call_performed = false`;
+- the real Edge Function returns HTTP 200 with `duplicate = true` for the same logical key;
+- the returned delivery public ID is the existing delivery;
+- total delivery and attempt counts do not change;
+- the fixture still has exactly one attempt after replay;
+- outbound settings remain disabled after replay;
+- no provider call occurs.
+
+This gate requires the existing Supabase Edge Function secret to be mirrored into GitHub Actions as repository secret `OUTBOUND_EMAIL_INGRESS_TOKEN`. The value must never be committed or printed.
+
+### Later Phase 3 gates
 
 1. Follow-Up shadow selection proof with writes disabled.
-2. One controlled Follow-Up write creates exactly one task + one activity, followed by same-day idempotency proof.
-3. Quote lifecycle mutation on a dedicated disposable/synthetic fixture with explicit post-test evidence and no accidental alert delivery.
-4. Outbound simulation creates exactly one logical delivery + one simulated attempt with `network_call_performed=false`, then repeats the same idempotency key and proves no duplicate attempt.
+2. One controlled Follow-Up write + same-day idempotency proof, only after a repeatable cleanup/reset strategy exists.
+3. Quote lifecycle mutation only after a disposable fixture or non-bypass cleanup design exists.
+4. Fresh outbound simulation only when a bounded reset strategy exists; until then the duplicate replay is the repeatable production-safe contract.
 
 Write-capable checks must stay manual-only, bounded to synthetic QA fixtures, and must never be enabled automatically on every pull request.
 
@@ -105,9 +122,11 @@ The automated regression program uses these GitHub Actions repository secrets:
 - `E2E_SECONDARY_EMAIL`
 - `E2E_SECONDARY_PASSWORD`
 
-Use two non-platform-admin accounts in different single-workspace tenants. Do not use the platform-admin identity for either side of the isolation proof.
+The outbound duplicate replay additionally requires:
 
-No additional secret is required for the Phase 3 read-only preflight. Future outbound duplicate-replay or simulation execution may require a dedicated test-only ingress secret, but that must be added as a separate explicit gate and must never expose the secret value in logs.
+- `OUTBOUND_EMAIL_INGRESS_TOKEN`
+
+Use two non-platform-admin accounts in different single-workspace tenants. Do not use the platform-admin identity for either side of the isolation proof.
 
 ## Commands
 
@@ -120,16 +139,25 @@ npm run test:e2e:auth
 npm run test:e2e:tenant
 ```
 
-Controlled preflight requires the existing QA credentials plus:
+Controlled read-only preflight:
 
 ```text
 CONTROLLED_REGRESSION_CONFIRMATION=SMART_CRM_SYNTHETIC_QA_ONLY
 ```
 
-Then run:
-
 ```bash
 npm run test:e2e:controlled
 ```
 
-Prefer the manual `Controlled E2E regression` GitHub Actions workflow so the confirmation and audit trail are captured centrally.
+Controlled outbound duplicate replay:
+
+```text
+OUTBOUND_IDEMPOTENCY_CONFIRMATION=SMART_CRM_OUTBOUND_DUPLICATE_QA
+OUTBOUND_EMAIL_INGRESS_TOKEN=<GitHub Actions secret only>
+```
+
+```bash
+npm run test:e2e:outbound-idempotency
+```
+
+Prefer the manual GitHub Actions workflows so confirmations and audit trails are captured centrally.
