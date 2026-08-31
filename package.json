@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "test:e2e": "playwright test",
     "test:e2e:public": "playwright test tests/e2e/public-auth.spec.ts",
-    "test:e2e:auth": "playwright test tests/e2e/authenticated-smoke.spec.ts"
+    "test:e2e:auth": "playwright test tests/e2e/authenticated-smoke.spec.ts",
+    "test:e2e:tenant": "playwright test tests/e2e/tenant-isolation.spec.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.0.0",
