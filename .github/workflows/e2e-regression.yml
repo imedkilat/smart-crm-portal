@@ -7,12 +7,14 @@ on:
       - 'tests/e2e/**'
       - 'scripts/e2e-controlled-preflight.mjs'
       - 'scripts/e2e-outbound-idempotency-replay.mjs'
+      - 'scripts/e2e-ai-scope-boundary.mjs'
       - 'playwright.config.ts'
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/e2e-regression.yml'
       - '.github/workflows/e2e-controlled-regression.yml'
       - '.github/workflows/e2e-outbound-idempotency.yml'
+      - '.github/workflows/e2e-ai-scope.yml'
   workflow_dispatch:
 
 permissions:
@@ -50,6 +52,7 @@ jobs:
         run: |
           node --check scripts/e2e-controlled-preflight.mjs
           node --check scripts/e2e-outbound-idempotency-replay.mjs
+          node --check scripts/e2e-ai-scope-boundary.mjs
 
       - name: Require tenant-isolation QA secrets
         shell: bash

@@ -59,57 +59,44 @@ The manual `Controlled E2E regression` workflow is merged at squash SHA `a23ce91
 
 The preflight proves the known Starter QA Follow-Up task, quote lifecycle fixture, outbound simulation fixture, disabled outbound state, and disabled quote-alert state without any insert/update/delete/provider call. Independent database verification after the run remained exactly one Follow-Up task, three lead activities, one controlled quote, one outbound delivery, and one outbound attempt.
 
-### Current gate: outbound duplicate/idempotency replay
+### Outbound duplicate/idempotency replay — merged and passed
 
-The first controlled write-capable-system regression exercises the real `crm-outbound-email` Edge Function without creating new data.
+The controlled outbound gate is merged at squash SHA `5d83772d3336e1665c20b4f6292fb50eb409e5ba` and passed on workflow run `33431605877`, attempt 2, with confirmation:
 
-Why this gate comes before quote mutation:
+`SMART_CRM_OUTBOUND_DUPLICATE_QA`
+
+The real `crm-outbound-email` Edge Function returned the existing logical delivery with `duplicate = true`. Independent production verification remained exactly one delivery and one attempt, with no provider message ID and `network_call_performed = false`. Outbound settings remained disabled and provider unset.
+
+Why quote mutation is not part of the repeatable production suite:
 
 - authenticated members have INSERT/SELECT/UPDATE access to `lead_quotes`, but no DELETE policy;
 - `lead_activities` also has no DELETE policy;
 - therefore a repeatable quote create/update test would permanently accumulate QA rows unless the regression bypassed normal RLS with privileged cleanup, which is intentionally not allowed.
 
-The outbound replay instead uses the already-existing synthetic logical delivery with idempotency key:
+Likewise, fresh Follow-Up writes remain deferred until a deterministic product-level reset/cleanup strategy exists. The regression program records those as deliberate exclusions rather than weakening production controls for test convenience.
 
-`qa-outbound-sim-20260901-001`
+## Phase 4: AI scoped-context boundary
 
-The manual workflow must refuse to run unless the operator supplies:
+A successful AI Brain request persists an `ai_interactions` row and can create candidate `ai_memories`. Because those records are intentionally not disposable in the production QA tenant, Phase 4 does not make a normal model call on every regression run.
 
-`SMART_CRM_OUTBOUND_DUPLICATE_QA`
+Instead, the manual `Controlled AI scope boundary` gate exercises the real `crm-ai-copilot` Edge Function and proves the authorization boundary before the n8n/model persistence path:
 
-The harness must prove all of the following:
+- two non-platform-admin QA identities authenticate independently;
+- each resolves exactly one distinct workspace and one active lead fixture;
+- direct RLS reads cannot see the foreign lead;
+- using identity A with identity B's `x-workspace-id` returns HTTP 403 `Workspace access denied`;
+- using identity A's valid workspace with identity B's lead `public_id` as `scope_type = lead` returns HTTP 403 `Requested AI scope is not available in this workspace`;
+- the same assertions run in the reverse direction;
+- before/after counts for `ai_interactions` and `ai_memories` are identical for both workspaces;
+- no request reaches the AI persistence path, so no AI interaction or memory row is created.
 
-- `Smart CRM Starter QA` is the only configured QA session for the target tenant;
-- outbound settings remain `enabled = false`, `mode = disabled`, provider unset, and run cap = 1;
-- the existing delivery is still simulated, has `attempt_count = 1`, no provider message ID, and `network_call_performed = false`;
-- the real Edge Function returns HTTP 200 with `duplicate = true` for the same logical key;
-- the returned delivery public ID is the existing delivery;
-- total delivery and attempt counts do not change;
-- the fixture still has exactly one attempt after replay;
-- outbound settings remain disabled after replay;
-- no provider call occurs.
+The workflow refuses to run unless the operator supplies:
 
-This gate requires the existing Supabase Edge Function secret to be mirrored into GitHub Actions as repository secret `OUTBOUND_EMAIL_INGRESS_TOKEN`. The value must never be committed or printed.
+`SMART_CRM_AI_SCOPE_QA`
 
-### Later Phase 3 gates
+This test may consume the normal AI rate-limit counter for the foreign-record probes because rate limiting occurs before scoped-record validation. It must not create CRM data, AI interaction rows, AI memory rows, tasks, activities, notes, or outbound deliveries.
 
-1. Follow-Up shadow selection proof with writes disabled.
-2. One controlled Follow-Up write + same-day idempotency proof, only after a repeatable cleanup/reset strategy exists.
-3. Quote lifecycle mutation only after a disposable fixture or non-bypass cleanup design exists.
-4. Fresh outbound simulation only when a bounded reset strategy exists; until then the duplicate replay is the repeatable production-safe contract.
-
-Write-capable checks must stay manual-only, bounded to synthetic QA fixtures, and must never be enabled automatically on every pull request.
-
-## Phase 4: AI scoped-context smoke
-
-For a fixed QA workspace with deterministic fixture data:
-
-- AI Brain loads only tenant-scoped context;
-- prompt execution returns a successful response shape;
-- no foreign workspace identifiers or records appear;
-- failures are surfaced as test failures without retrying writes.
-
-Avoid brittle exact-text assertions on model prose. Assert scope, record identity, response status, and required structured fields instead.
+After this gate passes in production, the current E2E regression foundation is considered complete. Future mutation tests remain separate, explicitly gated work and must not be added to default PR CI without a deterministic reset strategy.
 
 ## CI secrets
 
@@ -158,6 +145,16 @@ OUTBOUND_EMAIL_INGRESS_TOKEN=<GitHub Actions secret only>
 
 ```bash
 npm run test:e2e:outbound-idempotency
+```
+
+Controlled AI scope boundary:
+
+```text
+AI_SCOPE_CONFIRMATION=SMART_CRM_AI_SCOPE_QA
+```
+
+```bash
+npm run test:e2e:ai-scope
 ```
 
 Prefer the manual GitHub Actions workflows so confirmations and audit trails are captured centrally.
