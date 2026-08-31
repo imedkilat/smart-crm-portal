@@ -19,12 +19,16 @@ test.describe('public auth regression', () => {
       }
     })
 
-    await page.goto('/demo/automation-lab')
-    await expect(page).toHaveURL(/\/demo\/automation-lab$/)
+    await page.goto('/')
+    await expect(page).toHaveURL(/\/$/)
     await expect(page.getByRole('heading', { name: 'Build a workflow. Run it safely.' })).toBeVisible()
     await page.getByRole('button', { name: 'Run workflow →' }).click()
     await expect(page.getByText('Simulation complete')).toBeVisible()
     await expect(page.getByText(/0 database writes · 0 n8n calls · 0 provider calls/)).toBeVisible()
+
+    await page.goto('/demo/automation-lab')
+    await expect(page).toHaveURL(/\/demo\/automation-lab$/)
+    await expect(page.getByRole('heading', { name: 'Build a workflow. Run it safely.' })).toBeVisible()
     expect(supabaseRequests).toEqual([])
   })
 
