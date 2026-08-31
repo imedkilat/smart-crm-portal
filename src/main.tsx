@@ -4,6 +4,7 @@ import App from './App'
 import Login from './pages/Login'
 import ResetPassword from './pages/ResetPassword'
 import QuoteLifecyclePage from './pages/QuoteLifecyclePage'
+import AutomationLabPage from './pages/AutomationLabPage'
 import { signOut } from './lib/auth'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 import { ensureWorkspaceOnboarding } from './lib/workspace'
@@ -12,6 +13,7 @@ import './session.css'
 import './global-search.css'
 
 const RETURN_TO_KEY = 'smartcrm:returnTo'
+const PUBLIC_AUTOMATION_LAB_ROUTE = '/demo/automation-lab'
 
 type WorkspaceBootState = 'idle' | 'checking' | 'ready' | 'error'
 
@@ -256,8 +258,16 @@ function AuthRouter() {
   )
 }
 
+function RootRouter() {
+  const route = currentRoute()
+  if (route === '/' || route === PUBLIC_AUTOMATION_LAB_ROUTE) {
+    return <AutomationLabPage />
+  }
+  return <AuthRouter />
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <AuthRouter />
+    <RootRouter />
   </StrictMode>,
 )
