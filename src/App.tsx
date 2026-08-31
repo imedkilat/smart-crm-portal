@@ -306,6 +306,14 @@ export default function App() {
               {item.label}
             </button>
           ))}
+          <button
+            className="nav-item"
+            onClick={() => window.location.assign('/quotes')}
+            type="button"
+          >
+            <span className="nav-icon">◇</span>
+            Quotes
+          </button>
         </nav>
 
         <div className="sidebar-status">
