@@ -7,6 +7,8 @@ dist/
 .vscode/
 *.log
 *.tsbuildinfo
+playwright-report/
+test-results/
 
 supabase/.temp/
 

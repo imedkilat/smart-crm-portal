@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:e2e": "playwright test",
+    "test:e2e:public": "playwright test tests/e2e/public-auth.spec.ts",
+    "test:e2e:auth": "playwright test tests/e2e/authenticated-smoke.spec.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.0.0",
@@ -14,6 +17,7 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^5.0.0",
