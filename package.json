@@ -11,7 +11,8 @@
     "test:e2e:public": "playwright test tests/e2e/public-auth.spec.ts",
     "test:e2e:auth": "playwright test tests/e2e/authenticated-smoke.spec.ts",
     "test:e2e:tenant": "playwright test tests/e2e/tenant-isolation.spec.ts",
-    "test:e2e:controlled": "node scripts/e2e-controlled-preflight.mjs"
+    "test:e2e:controlled": "node scripts/e2e-controlled-preflight.mjs",
+    "test:e2e:outbound-idempotency": "node scripts/e2e-outbound-idempotency-replay.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.0.0",
