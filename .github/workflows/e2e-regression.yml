@@ -35,6 +35,12 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate tenant regression discovery
+        run: npm run test:e2e:tenant -- --list
+
       - name: Require tenant-isolation QA secrets
         shell: bash
         run: |
@@ -46,9 +52,6 @@ jobs:
             fi
           done
           exit "$missing"
-
-      - name: Install dependencies
-        run: npm ci
 
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
