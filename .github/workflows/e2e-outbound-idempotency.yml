@@ -1,0 +1,58 @@
+name: Controlled outbound idempotency
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Type SMART_CRM_OUTBOUND_DUPLICATE_QA to replay the existing synthetic outbound idempotency key.'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  outbound-idempotency:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+      E2E_PRIMARY_EMAIL: ${{ secrets.E2E_PRIMARY_EMAIL }}
+      E2E_PRIMARY_PASSWORD: ${{ secrets.E2E_PRIMARY_PASSWORD }}
+      E2E_SECONDARY_EMAIL: ${{ secrets.E2E_SECONDARY_EMAIL }}
+      E2E_SECONDARY_PASSWORD: ${{ secrets.E2E_SECONDARY_PASSWORD }}
+      OUTBOUND_EMAIL_INGRESS_TOKEN: ${{ secrets.OUTBOUND_EMAIL_INGRESS_TOKEN }}
+      OUTBOUND_IDEMPOTENCY_CONFIRMATION: ${{ inputs.confirmation }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify explicit QA-only confirmation
+        shell: bash
+        run: |
+          if [ "$OUTBOUND_IDEMPOTENCY_CONFIRMATION" != "SMART_CRM_OUTBOUND_DUPLICATE_QA" ]; then
+            echo "::error::Outbound idempotency replay refused. Confirmation phrase did not match."
+            exit 1
+          fi
+
+      - name: Require outbound ingress secret
+        shell: bash
+        run: |
+          if [ -z "$OUTBOUND_EMAIL_INGRESS_TOKEN" ]; then
+            echo "::error::Missing required repository secret: OUTBOUND_EMAIL_INGRESS_TOKEN"
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run outbound duplicate replay
+        run: npm run test:e2e:outbound-idempotency
