@@ -13,7 +13,8 @@
     "test:e2e:tenant": "playwright test tests/e2e/tenant-isolation.spec.ts",
     "test:e2e:controlled": "node scripts/e2e-controlled-preflight.mjs",
     "test:e2e:outbound-idempotency": "node scripts/e2e-outbound-idempotency-replay.mjs",
-    "test:e2e:ai-scope": "node scripts/e2e-ai-scope-boundary.mjs"
+    "test:e2e:ai-scope": "node scripts/e2e-ai-scope-boundary.mjs",
+    "verify:follow-up:scheduled": "node scripts/verify-follow-up-scheduled-observability.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.0.0",
@@ -24,7 +25,6 @@
     "@playwright/test": "^1.62.1",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "@vitejs/plugin-react": "^5.0.0",
     "typescript": "^5.8.0",
     "vite": "^6.0.0"
   }
