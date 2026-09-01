@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { deriveFollowUpHealth } from '../lib/automationHealth'
 import { supabase } from '../lib/supabase'
 import type { Database } from '../types/database'
 import LeadProfileDrawer from '../components/LeadProfileDrawer'
@@ -364,9 +365,15 @@ export default function AutomationPage({ onLeadUpdated }: Props) {
     const aiCompleted = aiInteractions.filter((row) => row.status === 'completed' && isRecent(row.completed_at || row.created_at)).length
 
     const followRows = leadActivities.filter(followUpActivity)
-    const latestFollow = followRows[0]
     const followPaused = followSettings.some((setting) => isPaused(setting.paused_until))
     const followEnabled = followSettings.some((setting) => setting.enabled)
+    const latestFollowRun = runs.find((run) => run.automation_key === 'follow-up-engine') || null
+    const followHealth = deriveFollowUpHealth({
+      enabled: followEnabled,
+      paused: followPaused,
+      latestRun: latestFollowRun,
+      recentEventCount: followRows.filter((row) => isRecent(row.occurred_at)).length,
+    })
 
     const latestDelivery = deliveries[0]
     const outboundPaused = outboundSettings.some((setting) => isPaused(setting.paused_until))
@@ -407,11 +414,11 @@ export default function AutomationPage({ onLeadUpdated }: Props) {
         key: 'follow-up',
         name: 'Follow-Up Engine',
         source: 'Scheduled n8n',
-        state: followPaused || !followEnabled ? 'off' : latestFollow ? 'healthy' : 'waiting',
-        status: followPaused ? 'Paused by workspace' : followEnabled ? 'Enabled' : 'Disabled by workspace',
-        metric: `${followRows.filter((row) => isRecent(row.occurred_at)).length} follow-up events / 24h`,
-        note: latestFollow ? latestFollow.title : 'No eligible follow-up activity has been recorded recently.',
-        lastAt: latestFollow?.occurred_at || null,
+        state: followHealth.state,
+        status: followHealth.status,
+        metric: followHealth.metric,
+        note: followHealth.note,
+        lastAt: followHealth.lastAt,
       },
       {
         key: 'outbound',
@@ -444,7 +451,7 @@ export default function AutomationPage({ onLeadUpdated }: Props) {
         lastAt: latestWeekly?.created_at || null,
       },
     ]
-  }, [events, aiInteractions, leadActivities, deliveries, quoteAlerts, weeklySummaries, followSettings, outboundSettings, quoteAlertSettings])
+  }, [runs, events, aiInteractions, leadActivities, deliveries, quoteAlerts, weeklySummaries, followSettings, outboundSettings, quoteAlertSettings])
 
   const latestRun = runs[0]
   const systemHealth: HealthState = recentIncidents.length > 0 ? 'attention' : 'healthy'
