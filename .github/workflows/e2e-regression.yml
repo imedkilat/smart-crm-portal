@@ -9,6 +9,7 @@ on:
       - 'scripts/e2e-outbound-idempotency-replay.mjs'
       - 'scripts/e2e-ai-scope-boundary.mjs'
       - 'scripts/instrument-follow-up-telemetry.mjs'
+      - 'scripts/verify-follow-up-scheduled-observability.mjs'
       - 'n8n/workflows/crm-follow-up-engine-mvp.json'
       - 'playwright.config.ts'
       - 'package.json'
@@ -55,6 +56,7 @@ jobs:
           node --check scripts/e2e-controlled-preflight.mjs
           node --check scripts/e2e-outbound-idempotency-replay.mjs
           node --check scripts/e2e-ai-scope-boundary.mjs
+          node --check scripts/verify-follow-up-scheduled-observability.mjs
 
       - name: Validate Follow-Up telemetry export
         run: |
