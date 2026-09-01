@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Database } from '../types/database'
 import '../archive.css'
+import { useWorkspace } from '../workspace-context'
 
 type Lead = Database['public']['Tables']['leads']['Row']
 
@@ -28,6 +29,7 @@ function statusClass(value: string | null) {
 }
 
 export default function ArchivePage({ onRestored, onBack }: Props) {
+  const { activeWorkspace } = useWorkspace()
   const [leads, setLeads] = useState<Lead[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -52,6 +54,7 @@ export default function ArchivePage({ onRestored, onBack }: Props) {
     const { data, error: loadError } = await supabase
       .from('leads')
       .select('*')
+      .eq('workspace_id', activeWorkspace.workspaceId)
       .not('archived_at', 'is', null)
       .order('archived_at', { ascending: false })
 
@@ -64,7 +67,7 @@ export default function ArchivePage({ onRestored, onBack }: Props) {
 
     setLoading(false)
     setRefreshing(false)
-  }, [])
+  }, [activeWorkspace.workspaceId])
 
   useEffect(() => { void loadArchived() }, [loadArchived])
 
@@ -96,6 +99,7 @@ export default function ArchivePage({ onRestored, onBack }: Props) {
       .from('leads')
       .update({ archived_at: null })
       .eq('id', lead.id)
+      .eq('workspace_id', activeWorkspace.workspaceId)
       .select('*')
       .single()
 

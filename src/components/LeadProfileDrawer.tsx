@@ -146,6 +146,7 @@ export default function LeadProfileDrawer({ lead, onClose, onUpdated }: Props) {
       .from('lead_routing_history')
       .select('*')
       .eq('lead_id', leadId)
+      .eq('workspace_id', currentLead.workspace_id!)
       .order('changed_at', { ascending: false })
       .limit(6)
 
@@ -163,18 +164,21 @@ export default function LeadProfileDrawer({ lead, onClose, onUpdated }: Props) {
         .from('lead_notes')
         .select('*')
         .eq('lead_id', leadId)
+        .eq('workspace_id', currentLead.workspace_id!)
         .order('created_at', { ascending: false })
         .limit(20),
       supabase
         .from('lead_tasks')
         .select('*')
         .eq('lead_id', leadId)
+        .eq('workspace_id', currentLead.workspace_id!)
         .order('created_at', { ascending: false })
         .limit(30),
       supabase
         .from('lead_activities')
         .select('*')
         .eq('lead_id', leadId)
+        .eq('workspace_id', currentLead.workspace_id!)
         .order('occurred_at', { ascending: false })
         .limit(40),
     ])
@@ -269,6 +273,7 @@ export default function LeadProfileDrawer({ lead, onClose, onUpdated }: Props) {
         updated_at: now,
       })
       .eq('id', task.id)
+      .eq('workspace_id', currentLead.workspace_id!)
 
     if (updateError) {
       setOpsError(updateError.message)
@@ -285,6 +290,7 @@ export default function LeadProfileDrawer({ lead, onClose, onUpdated }: Props) {
       .from('leads')
       .select('*')
       .eq('id', currentLead.id)
+      .eq('workspace_id', currentLead.workspace_id!)
       .single()
 
     if (refreshError) {
@@ -321,7 +327,7 @@ export default function LeadProfileDrawer({ lead, onClose, onUpdated }: Props) {
         summary: updatedLead.summary,
         source: updatedLead.source,
       },
-    })
+    }, { workspaceId: updatedLead.workspace_id || undefined })
   }
 
   async function logRoutingEvent(params: {
@@ -335,6 +341,7 @@ export default function LeadProfileDrawer({ lead, onClose, onUpdated }: Props) {
   }) {
     if (!supabase) return
     await supabase.from('lead_routing_history').insert({
+      workspace_id: currentLead.workspace_id!,
       event_key: params.eventKey,
       lead_id: params.leadId,
       from_status: params.fromStatus,
@@ -352,6 +359,7 @@ export default function LeadProfileDrawer({ lead, onClose, onUpdated }: Props) {
       .from('lead_routing_history')
       .select('id')
       .eq('lead_id', leadId)
+      .eq('workspace_id', currentLead.workspace_id!)
       .eq('to_status', toStatus)
       .eq('automation_triggered', true)
       .eq('automation_result', 'accepted')
@@ -388,6 +396,7 @@ export default function LeadProfileDrawer({ lead, onClose, onUpdated }: Props) {
       .from('leads')
       .update(updates)
       .eq('id', currentLead.id)
+      .eq('workspace_id', currentLead.workspace_id!)
       .select('*')
       .single()
 

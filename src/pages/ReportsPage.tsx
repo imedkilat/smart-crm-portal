@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Database } from '../types/database'
+import { useWorkspace } from '../workspace-context'
 
 type WeeklySummary = Database['public']['Tables']['weekly_summary']['Row']
 
@@ -31,6 +32,7 @@ function weeklyCold(report: WeeklySummary) {
 }
 
 export default function ReportsPage() {
+  const { activeWorkspace } = useWorkspace()
   const [reports, setReports] = useState<WeeklySummary[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -50,6 +52,7 @@ export default function ReportsPage() {
       const { data, error: loadError } = await supabase
         .from('weekly_summary')
         .select('*')
+        .eq('workspace_id', activeWorkspace.workspaceId)
         .order('created_at', { ascending: false })
 
       if (!active) return
@@ -63,7 +66,7 @@ export default function ReportsPage() {
     return () => {
       active = false
     }
-  }, [])
+  }, [activeWorkspace.workspaceId])
 
   const latest = reports[0]
   const latestIsV2 = Boolean(latest && latest.report_version >= 2)

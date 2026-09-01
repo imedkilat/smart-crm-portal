@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { formatLeadBudget, parseBudget } from '../lib/currency'
 import type { Database } from '../types/database'
 import '../pipeline.css'
+import { useWorkspace } from '../workspace-context'
 
 type Lead = Database['public']['Tables']['leads']['Row']
 type Pipeline = Database['public']['Tables']['pipelines']['Row']
@@ -38,6 +39,7 @@ function formatUsd(value: number) {
 }
 
 export default function PipelinePage({ onOpenLead, onLeadUpdated }: Props) {
+  const { activeWorkspace } = useWorkspace()
   const [pipeline, setPipeline] = useState<Pipeline | null>(null)
   const [stages, setStages] = useState<Stage[]>([])
   const [leads, setLeads] = useState<Lead[]>([])
@@ -67,6 +69,7 @@ export default function PipelinePage({ onOpenLead, onLeadUpdated }: Props) {
     const { data: pipelineData, error: pipelineError } = await supabase
       .from('pipelines')
       .select('*')
+      .eq('workspace_id', activeWorkspace.workspaceId)
       .eq('is_default', true)
       .limit(1)
       .maybeSingle()
@@ -82,7 +85,7 @@ export default function PipelinePage({ onOpenLead, onLeadUpdated }: Props) {
     setPipeline(activePipeline)
 
     const [stageResult, leadResult, taskResult] = await Promise.all([
-      supabase.from('pipeline_stages').select('*').eq('pipeline_id', activePipeline.id).order('position', { ascending: true }),
+      supabase.from('pipeline_stages').select('*').eq('workspace_id', activeWorkspace.workspaceId).eq('pipeline_id', activePipeline.id).order('position', { ascending: true }),
       supabase.from('leads').select('*').eq('workspace_id', activePipeline.workspace_id).is('archived_at', null).order('created_at', { ascending: false }),
       supabase.from('lead_tasks').select('*').eq('workspace_id', activePipeline.workspace_id).eq('status', 'open').order('due_at', { ascending: true }),
     ])
@@ -99,7 +102,7 @@ export default function PipelinePage({ onOpenLead, onLeadUpdated }: Props) {
 
     setLoading(false)
     setRefreshing(false)
-  }, [])
+  }, [activeWorkspace.workspaceId])
 
   useEffect(() => { void loadPipeline() }, [loadPipeline])
 
@@ -143,6 +146,7 @@ export default function PipelinePage({ onOpenLead, onLeadUpdated }: Props) {
       .from('leads')
       .update({ pipeline_stage_id: stageId })
       .eq('id', lead.id)
+      .eq('workspace_id', activeWorkspace.workspaceId)
       .select('*')
       .single()
 
@@ -197,7 +201,7 @@ export default function PipelinePage({ onOpenLead, onLeadUpdated }: Props) {
 
     setSavingStageId(stage.id)
     setError(null)
-    const { error: updateError } = await supabase.from('pipeline_stages').update({ name: nextName }).eq('id', stage.id)
+    const { error: updateError } = await supabase.from('pipeline_stages').update({ name: nextName }).eq('id', stage.id).eq('workspace_id', activeWorkspace.workspaceId)
     if (updateError) setError(updateError.message)
     else setStages((current) => current.map((item) => item.id === stage.id ? { ...item, name: nextName } : item))
     setSavingStageId(null)
@@ -212,7 +216,7 @@ export default function PipelinePage({ onOpenLead, onLeadUpdated }: Props) {
     }
     if (!window.confirm(`Delete the “${stage.name}” stage?`)) return
 
-    const { error: deleteError } = await supabase.from('pipeline_stages').delete().eq('id', stage.id)
+    const { error: deleteError } = await supabase.from('pipeline_stages').delete().eq('id', stage.id).eq('workspace_id', activeWorkspace.workspaceId)
     if (deleteError) setError(deleteError.message)
     else await loadPipeline(true)
   }

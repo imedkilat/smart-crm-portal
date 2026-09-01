@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { invokeSecureAutomation } from '../lib/secureFunctions'
 import type { Database } from '../types/database'
 import '../copilot.css'
+import { useWorkspace } from '../workspace-context'
 
 type Interaction = Database['public']['Tables']['ai_interactions']['Row']
 type Memory = Database['public']['Tables']['ai_memories']['Row']
@@ -42,6 +43,7 @@ function formatTime(value: string) {
 }
 
 export default function CopilotPage() {
+  const { activeWorkspace } = useWorkspace()
   const [workspace, setWorkspace] = useState<WorkspaceState | null>(null)
   const [workspaceRole, setWorkspaceRole] = useState<WorkspaceRole>('member')
   const [interactions, setInteractions] = useState<Interaction[]>([])
@@ -67,49 +69,28 @@ export default function CopilotPage() {
     setLoading(true)
     setError(null)
 
-    const { data: authData } = await supabase.auth.getUser()
-    const userId = authData.user?.id
-    if (!userId) {
-      setError('Sign in to use the AI Brain.')
-      setLoading(false)
-      return
-    }
-
-    const { data: memberships, error: membershipError } = await supabase
-      .from('workspace_members')
-      .select('workspace_id, role')
-      .eq('user_id', userId)
-      .limit(1)
-
-    if (membershipError || !memberships?.length) {
-      setError(membershipError?.message || 'No CRM workspace membership found.')
-      setLoading(false)
-      return
-    }
-
-    const workspaceId = memberships[0].workspace_id
-    const [workspaceResult, interactionResult, memoryResult] = await Promise.all([
-      supabase.from('workspaces').select('id, name').eq('id', workspaceId).single(),
+    const workspaceId = activeWorkspace.workspaceId
+    const [interactionResult, memoryResult] = await Promise.all([
       supabase.from('ai_interactions').select('*').eq('workspace_id', workspaceId).eq('status', 'completed').order('created_at', { ascending: false }).limit(30),
       supabase.from('ai_memories').select('*').eq('workspace_id', workspaceId).in('status', ['active', 'candidate']).order('updated_at', { ascending: false }).limit(100),
     ])
 
-    if (workspaceResult.error || interactionResult.error || memoryResult.error) {
-      setError(workspaceResult.error?.message || interactionResult.error?.message || memoryResult.error?.message || 'Could not load AI workspace.')
+    if (interactionResult.error || memoryResult.error) {
+      setError(interactionResult.error?.message || memoryResult.error?.message || 'Could not load AI workspace.')
       setLoading(false)
       return
     }
 
-    const currentWorkspace = workspaceResult.data as WorkspaceState
+    const currentWorkspace = { id: activeWorkspace.workspaceId, name: activeWorkspace.name }
     setWorkspace(currentWorkspace)
-    setWorkspaceRole((memberships[0].role as WorkspaceRole) || 'member')
+    setWorkspaceRole((activeWorkspace.role as WorkspaceRole) || 'member')
     setInteractions((interactionResult.data || []) as Interaction[])
     setMemories((memoryResult.data || []) as Memory[])
 
     const storedConversation = window.localStorage.getItem(conversationStorageKey(currentWorkspace.id))
     if (storedConversation) setConversationId(storedConversation)
     setLoading(false)
-  }, [])
+  }, [activeWorkspace.name, activeWorkspace.role, activeWorkspace.workspaceId])
 
   useEffect(() => { void load() }, [load])
 

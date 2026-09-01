@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { formatLeadBudget } from '../lib/currency'
 import type { Database } from '../types/database'
 import LeadProfileDrawer from '../components/LeadProfileDrawer'
+import { useWorkspace } from '../workspace-context'
 import '../leads-new.css'
 
 type Lead = Database['public']['Tables']['leads']['Row']
@@ -54,6 +55,7 @@ function freshnessLabel(lead: Lead) {
 }
 
 export default function LeadsPage({ onLoaded, onAddLead, selectedPublicId, onOpenLead, onCloseLead }: Props) {
+  const { activeWorkspace } = useWorkspace()
   const [leads, setLeads] = useState<Lead[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -80,6 +82,7 @@ export default function LeadsPage({ onLoaded, onAddLead, selectedPublicId, onOpe
     const { data, error: loadError } = await supabase
       .from('leads')
       .select('*')
+      .eq('workspace_id', activeWorkspace.workspaceId)
       .is('archived_at', null)
       .order('created_at', { ascending: false })
 
@@ -94,7 +97,7 @@ export default function LeadsPage({ onLoaded, onAddLead, selectedPublicId, onOpe
 
     setLoading(false)
     setRefreshing(false)
-  }, [onLoaded])
+  }, [activeWorkspace.workspaceId, onLoaded])
 
   useEffect(() => { void loadLeads() }, [loadLeads])
 
@@ -162,6 +165,7 @@ export default function LeadsPage({ onLoaded, onAddLead, selectedPublicId, onOpe
       .from('leads')
       .update({ archived_at: new Date().toISOString() })
       .eq('id', lead.id)
+      .eq('workspace_id', activeWorkspace.workspaceId)
 
     if (archiveError) {
       setError(`Could not archive lead: ${archiveError.message}`)

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Database } from '../types/database'
 import LeadProfileDrawer from './LeadProfileDrawer'
+import { useWorkspace } from '../workspace-context'
 
 type Lead = Database['public']['Tables']['leads']['Row']
 
@@ -51,6 +52,7 @@ function searchScore(lead: Lead, query: string) {
 }
 
 export default function GlobalSearch({ onLeadUpdated }: Props) {
+  const { activeWorkspace } = useWorkspace()
   const [leads, setLeads] = useState<Lead[]>([])
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
@@ -67,6 +69,7 @@ export default function GlobalSearch({ onLeadUpdated }: Props) {
     const { data, error } = await supabase
       .from('leads')
       .select('*')
+      .eq('workspace_id', activeWorkspace.workspaceId)
       .order('created_at', { ascending: false })
 
     if (!error) {
@@ -78,7 +81,7 @@ export default function GlobalSearch({ onLeadUpdated }: Props) {
 
   useEffect(() => {
     void loadLeads()
-  }, [])
+  }, [activeWorkspace.workspaceId])
 
   useEffect(() => {
     function handleOutside(event: MouseEvent) {

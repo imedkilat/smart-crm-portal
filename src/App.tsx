@@ -12,6 +12,8 @@ import CopilotPage from './pages/CopilotPage'
 import ReportsPage from './pages/ReportsPage'
 import AutomationPage from './pages/AutomationPage'
 import SettingsPage from './pages/SettingsPage'
+import WorkspaceSwitcher from './components/WorkspaceSwitcher'
+import { useWorkspace } from './workspace-context'
 import './analytics.css'
 import './crm-pages.css'
 import './system-pages.css'
@@ -132,6 +134,7 @@ function freshnessLabel(lead: Lead, now = Date.now()) {
 }
 
 export default function App() {
+  const { activeWorkspace } = useWorkspace()
   const { route, navigate, navigateLead } = useAppRoute()
   const page = route.page
   const [leads, setLeads] = useState<Lead[]>([])
@@ -172,26 +175,11 @@ export default function App() {
 
       const preferredName = preferredAccountName(user.user_metadata)
       const displayName = preferredName || user.email || 'Signed-in user'
-      let roleLabel = 'Workspace member'
-
-      const { data: memberships, error: membershipError } = await supabase
-        .from('workspace_members')
-        .select('role')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: true })
-        .limit(2)
-
-      if (!membershipError && memberships?.length === 1) {
-        roleLabel = formatRole(memberships[0].role)
-      } else if (!membershipError && memberships && memberships.length > 1) {
-        roleLabel = 'Multiple workspaces'
-      }
-
       if (!active) return
       setAccountIdentity({
         displayName,
         greetingName: accountFirstName(preferredName),
-        roleLabel,
+        roleLabel: formatRole(activeWorkspace.role),
       })
     }
 
@@ -199,7 +187,7 @@ export default function App() {
     return () => {
       active = false
     }
-  }, [])
+  }, [activeWorkspace.role])
 
   useEffect(() => {
     if (page !== 'dashboard' && page !== 'analytics') return
@@ -217,8 +205,8 @@ export default function App() {
       setError(null)
 
       const [leadsResult, weeklyResult] = await Promise.all([
-        supabase.from('leads').select('*').is('archived_at', null).order('created_at', { ascending: false }),
-        supabase.from('weekly_summary').select('*').order('created_at', { ascending: false }).limit(1),
+        supabase.from('leads').select('*').eq('workspace_id', activeWorkspace.workspaceId).is('archived_at', null).order('created_at', { ascending: false }),
+        supabase.from('weekly_summary').select('*').eq('workspace_id', activeWorkspace.workspaceId).order('created_at', { ascending: false }).limit(1),
       ])
 
       if (!active) return
@@ -240,13 +228,14 @@ export default function App() {
     return () => {
       active = false
     }
-  }, [page])
+  }, [activeWorkspace.workspaceId, page])
 
   const handleLeadsLoaded = useCallback((rows: Lead[]) => {
-    setLeads(sortNewest(rows.filter((lead) => !lead.archived_at)))
-  }, [])
+    setLeads(sortNewest(rows.filter((lead) => lead.workspace_id === activeWorkspace.workspaceId && !lead.archived_at)))
+  }, [activeWorkspace.workspaceId])
 
   const handleLeadUpdated = useCallback((updatedLead: Lead) => {
+    if (updatedLead.workspace_id !== activeWorkspace.workspaceId) return
     setLeads((current) => {
       if (updatedLead.archived_at) {
         return current.filter((lead) => lead.id !== updatedLead.id)
@@ -259,7 +248,7 @@ export default function App() {
 
       return sortNewest(next)
     })
-  }, [])
+  }, [activeWorkspace.workspaceId])
 
   const metrics = useMemo<Metrics>(() => {
     const total = leads.length
@@ -293,6 +282,8 @@ export default function App() {
             <span>Automation workspace</span>
           </div>
         </div>
+
+        <WorkspaceSwitcher onSwitch={() => navigate('dashboard')} />
 
         <nav className="nav-list" aria-label="Primary navigation">
           {navItems.map((item) => (
@@ -339,7 +330,7 @@ export default function App() {
           </div>
         </header>
 
-        <main className="content">
+        <main className="content" key={activeWorkspace.workspaceId}>
           {page === 'dashboard' && (
             <DashboardPage
               loading={loading}

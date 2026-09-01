@@ -330,3 +330,65 @@ tbody tr:hover { background: #fbfcfe; }
   .section-heading .button { width: 100%; }
   .insight-copy { font-size: 15px; }
 }
+
+.workspace-switcher {
+  display: grid;
+  gap: 6px;
+  margin: 0 16px 14px;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--text);
+}
+
+.workspace-switcher-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.workspace-switcher-copy small {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .12em;
+}
+
+.workspace-switcher-copy strong {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-switcher select {
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #f8fafc;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.workspace-switcher-role {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.workspace-context-state {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: #f6f8fc;
+  color: #6f7a8f;
+  font: 13px/1.5 Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+.quote-header-actions .workspace-switcher {
+  min-width: 210px;
+  margin: 0;
+}

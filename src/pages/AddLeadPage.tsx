@@ -1,5 +1,6 @@
 import { FormEvent, useRef, useState } from 'react'
 import { invokeSecureAutomation } from '../lib/secureFunctions'
+import { useWorkspace } from '../workspace-context'
 
 type Props = {
   onCreated?: () => void
@@ -60,6 +61,7 @@ function describeLeads(result: IntakeResult): string {
 }
 
 export default function AddLeadPage({ onCreated }: Props) {
+  const { activeWorkspace } = useWorkspace()
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [budget, setBudget] = useState('')
@@ -84,7 +86,7 @@ export default function AddLeadPage({ onCreated }: Props) {
         budget: budget.trim(),
         currency_code: 'USD',
         message: message.trim(),
-      })
+      }, { workspaceId: activeWorkspace.workspaceId })
       const result = parseIntakeResult(raw)
 
       setSubmitState('success')
@@ -123,7 +125,7 @@ export default function AddLeadPage({ onCreated }: Props) {
       form.append('upload_date', today())
       form.append('file', file)
 
-      const raw = await invokeSecureAutomation('crm-lead-intake', form)
+      const raw = await invokeSecureAutomation('crm-lead-intake', form, { workspaceId: activeWorkspace.workspaceId })
       const result = parseIntakeResult(raw)
 
       setUploadState('success')

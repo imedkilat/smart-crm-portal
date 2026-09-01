@@ -2,8 +2,9 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import '../quote-lifecycle.css'
+import { useWorkspace } from '../workspace-context'
+import WorkspaceSwitcher from '../components/WorkspaceSwitcher'
 
-type WorkspaceMembership = { workspace_id: string; role: string }
 type LeadRow = { id: number; public_id: string; workspace_id: string | null; name: string | null; email: string | null; currency_code: string }
 type QuoteRow = {
   id: string
@@ -63,6 +64,7 @@ function statusLabel(value: QuoteRow['status']) {
 }
 
 export default function QuoteLifecyclePage() {
+  const { activeWorkspace } = useWorkspace()
   const [workspaceId, setWorkspaceId] = useState<string | null>(null)
   const [workspaceRole, setWorkspaceRole] = useState<string | null>(null)
   const [leads, setLeads] = useState<LeadRow[]>([])
@@ -95,39 +97,16 @@ export default function QuoteLifecyclePage() {
         setLoading(false)
         return
       }
-      const { data: userData, error: userError } = await supabase.auth.getUser()
-      const user = userData.user
-      if (!active) return
-      if (userError || !user) {
-        setError(userError?.message || 'Could not resolve the current user.')
-        setLoading(false)
-        return
-      }
-      const membership = await supabase
-        .from('workspace_members')
-        .select('workspace_id, role')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: true })
-        .limit(2)
-      if (!active) return
-      if (membership.error || !membership.data?.length) {
-        setError(membership.error?.message || 'No workspace membership found.')
-        setLoading(false)
-        return
-      }
-      if (membership.data.length !== 1) {
-        setError('Quote lifecycle currently requires one active workspace context.')
-        setLoading(false)
-        return
-      }
-      const resolved = membership.data[0] as WorkspaceMembership
-      setWorkspaceId(resolved.workspace_id)
-      setWorkspaceRole(resolved.role)
-      await loadWorkspace(resolved.workspace_id)
+      setLeads([])
+      setQuotes([])
+      setSelectedId(null)
+      setWorkspaceId(activeWorkspace.workspaceId)
+      setWorkspaceRole(activeWorkspace.role)
+      await loadWorkspace(activeWorkspace.workspaceId)
     }
     void boot()
     return () => { active = false }
-  }, [])
+  }, [activeWorkspace.role, activeWorkspace.workspaceId])
 
   async function loadWorkspace(resolvedWorkspaceId = workspaceId) {
     if (!supabase || !resolvedWorkspaceId) return
@@ -265,6 +244,7 @@ export default function QuoteLifecyclePage() {
           <p>Create, track, and confirm quote follow-up state. Alert delivery remains disabled in this gate.</p>
         </div>
         <div className="quote-header-actions">
+          <WorkspaceSwitcher />
           <a className="button secondary" href="/dashboard">← Dashboard</a>
           <button className="button primary" type="button" onClick={resetDraft}>New quote</button>
         </div>

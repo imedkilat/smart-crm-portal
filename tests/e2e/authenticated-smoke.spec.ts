@@ -18,6 +18,7 @@ test.describe('credential-gated protected-route smoke', () => {
 
     await expect(page).toHaveURL(/\/dashboard$/, { timeout: 30_000 })
     await expect(page).toHaveTitle(/Dashboard · Smart CRM/)
+    await expect(page.getByText('ACTIVE WORKSPACE', { exact: true })).toBeVisible()
 
     await page.goto('/quotes')
     await expect(page).toHaveURL(/\/quotes$/)
