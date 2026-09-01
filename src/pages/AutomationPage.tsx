@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import type { Database } from '../types/database'
 import LeadProfileDrawer from '../components/LeadProfileDrawer'
 import '../automation-health.css'
+import { useWorkspace } from '../workspace-context'
 
 type Lead = Database['public']['Tables']['leads']['Row']
 type RoutingEvent = Database['public']['Tables']['lead_routing_history']['Row']
@@ -191,6 +192,7 @@ function isFailureStatus(value: string) {
 }
 
 export default function AutomationPage({ onLeadUpdated }: Props) {
+  const { activeWorkspace } = useWorkspace()
   const [runs, setRuns] = useState<AutomationRun[]>([])
   const [runTelemetryReady, setRunTelemetryReady] = useState(true)
   const [events, setEvents] = useState<RoutingEvent[]>([])
@@ -238,18 +240,18 @@ export default function AutomationPage({ onLeadUpdated }: Props) {
       outboundSettingsResult,
       alertSettingsResult,
     ] = await Promise.all([
-      client.from('automation_runs').select('*').order('started_at', { ascending: false }).limit(100),
-      client.from('lead_routing_history').select('*').order('changed_at', { ascending: false }).limit(100),
-      client.from('leads').select('*').order('created_at', { ascending: false }),
-      client.from('ai_interactions').select('*').order('created_at', { ascending: false }).limit(100),
-      client.from('lead_activities').select('id,workspace_id,activity_type,title,metadata,occurred_at').order('occurred_at', { ascending: false }).limit(100),
-      client.from('outbound_email_deliveries').select('id,public_id,workspace_id,lead_id,status,mode,provider,attempt_count,last_attempt_at,last_error_code,last_error_message,created_at,updated_at').order('created_at', { ascending: false }).limit(100),
-      client.from('outbound_email_attempts').select('id,workspace_id,delivery_id,status,error_code,error_message,attempted_at').order('attempted_at', { ascending: false }).limit(100),
-      client.from('quote_alerts').select('id,public_id,workspace_id,status,alert_type,channel,attempt_count,last_attempt_at,last_error,created_at,updated_at').order('created_at', { ascending: false }).limit(100),
-      client.from('weekly_summary').select('*').order('created_at', { ascending: false }).limit(20),
-      client.from('workspace_follow_up_settings').select('workspace_id,enabled,paused_until'),
-      client.from('workspace_outbound_email_settings').select('workspace_id,enabled,paused_until,mode,provider'),
-      client.from('workspace_quote_alert_settings').select('workspace_id,enabled,paused_until'),
+      client.from('automation_runs').select('*').eq('workspace_id', activeWorkspace.workspaceId).order('started_at', { ascending: false }).limit(100),
+      client.from('lead_routing_history').select('*').eq('workspace_id', activeWorkspace.workspaceId).order('changed_at', { ascending: false }).limit(100),
+      client.from('leads').select('*').eq('workspace_id', activeWorkspace.workspaceId).order('created_at', { ascending: false }),
+      client.from('ai_interactions').select('*').eq('workspace_id', activeWorkspace.workspaceId).order('created_at', { ascending: false }).limit(100),
+      client.from('lead_activities').select('id,workspace_id,activity_type,title,metadata,occurred_at').eq('workspace_id', activeWorkspace.workspaceId).order('occurred_at', { ascending: false }).limit(100),
+      client.from('outbound_email_deliveries').select('id,public_id,workspace_id,lead_id,status,mode,provider,attempt_count,last_attempt_at,last_error_code,last_error_message,created_at,updated_at').eq('workspace_id', activeWorkspace.workspaceId).order('created_at', { ascending: false }).limit(100),
+      client.from('outbound_email_attempts').select('id,workspace_id,delivery_id,status,error_code,error_message,attempted_at').eq('workspace_id', activeWorkspace.workspaceId).order('attempted_at', { ascending: false }).limit(100),
+      client.from('quote_alerts').select('id,public_id,workspace_id,status,alert_type,channel,attempt_count,last_attempt_at,last_error,created_at,updated_at').eq('workspace_id', activeWorkspace.workspaceId).order('created_at', { ascending: false }).limit(100),
+      client.from('weekly_summary').select('*').eq('workspace_id', activeWorkspace.workspaceId).order('created_at', { ascending: false }).limit(20),
+      client.from('workspace_follow_up_settings').select('workspace_id,enabled,paused_until').eq('workspace_id', activeWorkspace.workspaceId),
+      client.from('workspace_outbound_email_settings').select('workspace_id,enabled,paused_until,mode,provider').eq('workspace_id', activeWorkspace.workspaceId),
+      client.from('workspace_quote_alert_settings').select('workspace_id,enabled,paused_until').eq('workspace_id', activeWorkspace.workspaceId),
     ])
 
     if (runsResult.error) {
@@ -283,7 +285,7 @@ export default function AutomationPage({ onLeadUpdated }: Props) {
 
     setLoading(false)
     setRefreshing(false)
-  }, [])
+  }, [activeWorkspace.workspaceId])
 
   useEffect(() => { void loadHealth() }, [loadHealth])
 

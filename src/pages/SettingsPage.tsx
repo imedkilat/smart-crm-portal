@@ -6,6 +6,7 @@ import WorkspaceBrandingPanel from '../components/WorkspaceBrandingPanel'
 import MessageTemplatesPanel from '../components/MessageTemplatesPanel'
 import SubscriberProvisioningPanel from '../components/SubscriberProvisioningPanel'
 import ArchivePage from './ArchivePage'
+import { useWorkspace } from '../workspace-context'
 
 const LEAD_WEBHOOK = import.meta.env.VITE_N8N_LEAD_WEBHOOK_URL || 'https://tolakautomations.app.n8n.cloud/webhook/799b1d66-0a5f-44b0-8f43-600ea4775979'
 const STATUS_WEBHOOK = import.meta.env.VITE_N8N_STATUS_WEBHOOK_URL || 'https://tolakautomations.app.n8n.cloud/webhook/smart-crm-status-route'
@@ -27,6 +28,7 @@ function endpointLabel(url: string) {
 }
 
 export default function SettingsPage({ onOpenRunLog, onLeadRestored }: Props) {
+  const { activeWorkspace } = useWorkspace()
   const [checking, setChecking] = useState(true)
   const [databaseHealthy, setDatabaseHealthy] = useState(false)
   const [activeLeadCount, setActiveLeadCount] = useState<number | null>(null)
@@ -52,26 +54,15 @@ export default function SettingsPage({ onOpenRunLog, onLeadRestored }: Props) {
 
     setChecking(true)
     const [leadResult, archiveResult, eventResult, userResult] = await Promise.all([
-      supabase.from('leads').select('id', { count: 'exact', head: true }).is('archived_at', null),
-      supabase.from('leads').select('id', { count: 'exact', head: true }).not('archived_at', 'is', null),
-      supabase.from('lead_routing_history').select('id', { count: 'exact', head: true }),
+      supabase.from('leads').select('id', { count: 'exact', head: true }).eq('workspace_id', activeWorkspace.workspaceId).is('archived_at', null),
+      supabase.from('leads').select('id', { count: 'exact', head: true }).eq('workspace_id', activeWorkspace.workspaceId).not('archived_at', 'is', null),
+      supabase.from('lead_routing_history').select('id', { count: 'exact', head: true }).eq('workspace_id', activeWorkspace.workspaceId),
       supabase.auth.getUser(),
     ])
 
     const user = userResult.data.user
-    let membershipRole: string | null = null
-    let workspaceId: string | null = null
-    if (user) {
-      const { data: membership } = await supabase
-        .from('workspace_members')
-        .select('role, workspace_id')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: true })
-        .limit(1)
-        .maybeSingle()
-      membershipRole = membership?.role || null
-      workspaceId = membership?.workspace_id || null
-    }
+    const membershipRole = activeWorkspace.role
+    const workspaceId = activeWorkspace.workspaceId
 
     let nextPlanName: string | null = null
     let nextPlanCode: string | null = null
@@ -118,7 +109,7 @@ export default function SettingsPage({ onOpenRunLog, onLeadRestored }: Props) {
     setIsPlatformAdmin(user?.app_metadata?.platform_role === 'platform_admin')
     setCheckedAt(new Date())
     setChecking(false)
-  }, [])
+  }, [activeWorkspace.role, activeWorkspace.workspaceId])
 
   useEffect(() => { void checkHealth() }, [checkHealth])
 

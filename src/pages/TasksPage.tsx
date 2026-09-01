@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Database } from '../types/database'
 import '../tasks.css'
+import { useWorkspace } from '../workspace-context'
 
 type Lead = Database['public']['Tables']['leads']['Row']
 type Task = Database['public']['Tables']['lead_tasks']['Row']
@@ -60,6 +61,7 @@ function formatDue(task: Task) {
 }
 
 export default function TasksPage({ onOpenLead }: Props) {
+  const { activeWorkspace } = useWorkspace()
   const [tasks, setTasks] = useState<Task[]>([])
   const [leads, setLeads] = useState<Lead[]>([])
   const [filter, setFilter] = useState<Filter>('today')
@@ -81,8 +83,8 @@ export default function TasksPage({ onOpenLead }: Props) {
     setError(null)
 
     const [taskResult, leadResult] = await Promise.all([
-      supabase.from('lead_tasks').select('*').order('created_at', { ascending: false }),
-      supabase.from('leads').select('*').is('archived_at', null),
+      supabase.from('lead_tasks').select('*').eq('workspace_id', activeWorkspace.workspaceId).order('created_at', { ascending: false }),
+      supabase.from('leads').select('*').eq('workspace_id', activeWorkspace.workspaceId).is('archived_at', null),
     ])
 
     if (taskResult.error || leadResult.error) {
@@ -94,7 +96,7 @@ export default function TasksPage({ onOpenLead }: Props) {
 
     setLoading(false)
     setRefreshing(false)
-  }, [])
+  }, [activeWorkspace.workspaceId])
 
   useEffect(() => { void load() }, [load])
 
@@ -154,6 +156,7 @@ export default function TasksPage({ onOpenLead }: Props) {
         updated_at: nowIso,
       })
       .eq('id', task.id)
+      .eq('workspace_id', activeWorkspace.workspaceId)
       .select('*')
       .single()
 

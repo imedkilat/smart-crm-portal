@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import type { Database } from '../types/database'
 import '../workspace-branding.css'
+import { useWorkspace } from '../workspace-context'
 
 const BRAND_BUCKET = 'workspace-brand-assets'
 const MAX_LOGO_BYTES = 2 * 1024 * 1024
@@ -89,6 +90,7 @@ function isMissingBrandingSchema(error: { code?: string; message?: string } | nu
 }
 
 export default function WorkspaceBrandingPanel() {
+  const { activeWorkspace } = useWorkspace()
   const brandingClient = supabase as unknown as SupabaseClient<BrandingDatabase> | null
   const [workspaceId, setWorkspaceId] = useState<string | null>(null)
   const [workspaceRole, setWorkspaceRole] = useState<string | null>(null)
@@ -121,57 +123,17 @@ export default function WorkspaceBrandingPanel() {
       setNotice(null)
       setWorkspaceResolutionError(null)
 
-      const { data: userData, error: userError } = await supabase.auth.getUser()
-      const user = userData.user
-      if (!active) return
-      if (userError || !user) {
-        setError(userError?.message || 'Could not resolve the current user.')
-        setLoading(false)
-        return
-      }
-
-      const membershipResult = await supabase
-        .from('workspace_members')
-        .select('workspace_id, role')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: true })
-        .limit(2)
-
-      if (!active) return
-      if (membershipResult.error) {
-        setError(membershipResult.error.message)
-        setLoading(false)
-        return
-      }
-
-      const memberships = membershipResult.data || []
-      if (memberships.length === 0) {
-        setWorkspaceResolutionError('No workspace membership was found for this account.')
-        setLoading(false)
-        return
-      }
-
-      if (memberships.length > 1) {
-        setWorkspaceResolutionError('This account belongs to multiple workspaces. Choose an active workspace before editing branding. Smart CRM will not guess which tenant you meant.')
-        setLoading(false)
-        return
-      }
-
-      const membership = memberships[0]
-      const nextWorkspaceId = membership.workspace_id
+      const nextWorkspaceId = activeWorkspace.workspaceId
       setWorkspaceId(nextWorkspaceId)
-      setWorkspaceRole(membership.role || null)
+      setWorkspaceRole(activeWorkspace.role)
 
-      const [workspaceResult, brandingResult] = await Promise.all([
-        supabase.from('workspaces').select('name').eq('id', nextWorkspaceId).maybeSingle(),
-        brandingClient.from('workspace_branding').select('*').eq('workspace_id', nextWorkspaceId).maybeSingle(),
-      ])
+      const brandingResult = await brandingClient.from('workspace_branding').select('*').eq('workspace_id', nextWorkspaceId).maybeSingle()
 
       if (!active) return
       if (brandingResult.error) {
         if (isMissingBrandingSchema(brandingResult.error)) {
           setSchemaReady(false)
-          setDraft({ ...EMPTY_DRAFT, company_name: workspaceResult.data?.name || '' })
+          setDraft({ ...EMPTY_DRAFT, company_name: activeWorkspace.name })
           setLoading(false)
           return
         }
@@ -183,7 +145,7 @@ export default function WorkspaceBrandingPanel() {
       setSchemaReady(true)
       const row = brandingResult.data as BrandingRow | null
       setDraft({
-        company_name: row?.company_name || workspaceResult.data?.name || '',
+        company_name: row?.company_name || activeWorkspace.name,
         primary_color: row?.primary_color || EMPTY_DRAFT.primary_color,
         secondary_color: row?.secondary_color || EMPTY_DRAFT.secondary_color,
         website_url: row?.website_url || null,
@@ -197,7 +159,7 @@ export default function WorkspaceBrandingPanel() {
 
     void loadBranding()
     return () => { active = false }
-  }, [brandingClient])
+  }, [activeWorkspace.name, activeWorkspace.role, activeWorkspace.workspaceId, brandingClient])
 
   const logoUrl = useMemo(() => {
     if (!supabase || !logoPath) return null

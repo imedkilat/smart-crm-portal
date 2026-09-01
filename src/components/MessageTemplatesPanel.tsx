@@ -12,6 +12,7 @@ import {
   type TemplateVariableKey,
 } from '../lib/messageTemplates'
 import '../message-templates.css'
+import { useWorkspace } from '../workspace-context'
 
 const BRAND_BUCKET = 'workspace-brand-assets'
 
@@ -122,6 +123,7 @@ function newTemplateDraft(): TemplateDraft {
 }
 
 export default function MessageTemplatesPanel() {
+  const { activeWorkspace } = useWorkspace()
   const client = supabase as unknown as SupabaseClient<TemplateDatabase> | null
   const [workspaceId, setWorkspaceId] = useState<string | null>(null)
   const [workspaceRole, setWorkspaceRole] = useState<string | null>(null)
@@ -156,47 +158,9 @@ export default function MessageTemplatesPanel() {
       setNotice(null)
       setWorkspaceResolutionError(null)
 
-      const { data: userData, error: userError } = await supabase.auth.getUser()
-      const user = userData.user
-      if (!active) return
-
-      if (userError || !user) {
-        setError(userError?.message || 'Could not resolve the current user.')
-        setLoading(false)
-        return
-      }
-
-      const membershipResult = await supabase
-        .from('workspace_members')
-        .select('workspace_id, role')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: true })
-        .limit(2)
-
-      if (!active) return
-      if (membershipResult.error) {
-        setError(membershipResult.error.message)
-        setLoading(false)
-        return
-      }
-
-      const memberships = membershipResult.data || []
-      if (memberships.length === 0) {
-        setWorkspaceResolutionError('No workspace membership was found for this account.')
-        setLoading(false)
-        return
-      }
-
-      if (memberships.length > 1) {
-        setWorkspaceResolutionError('This account belongs to multiple workspaces. Choose an active workspace before editing message templates. Smart CRM will not guess which tenant you meant.')
-        setLoading(false)
-        return
-      }
-
-      const membership = memberships[0]
-      const nextWorkspaceId = membership.workspace_id
+      const nextWorkspaceId = activeWorkspace.workspaceId
       setWorkspaceId(nextWorkspaceId)
-      setWorkspaceRole(membership.role || null)
+      setWorkspaceRole(activeWorkspace.role)
 
       const [brandingResult, templateResult] = await Promise.all([
         client.from('workspace_branding').select('*').eq('workspace_id', nextWorkspaceId).maybeSingle(),
@@ -250,7 +214,7 @@ export default function MessageTemplatesPanel() {
 
     void loadTemplates()
     return () => { active = false }
-  }, [client])
+  }, [activeWorkspace.role, activeWorkspace.workspaceId, client])
 
   const logoUrl = useMemo(() => {
     if (!supabase || !branding?.logo_path) return null

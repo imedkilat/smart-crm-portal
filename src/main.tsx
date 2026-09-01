@@ -7,7 +7,8 @@ import QuoteLifecyclePage from './pages/QuoteLifecyclePage'
 import AutomationLabPage from './pages/AutomationLabPage'
 import { signOut } from './lib/auth'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
-import { ensureWorkspaceOnboarding } from './lib/workspace'
+import { ensureWorkspaceOnboarding, type WorkspaceContext } from './lib/workspace'
+import { WorkspaceProvider, useWorkspace } from './workspace-context'
 import './styles.css'
 import './session.css'
 import './global-search.css'
@@ -90,6 +91,11 @@ function WorkspaceProblem({ message, onRetry, onSignOut, signingOut }: {
   )
 }
 
+function WorkspaceBoundQuoteLifecyclePage() {
+  const { activeWorkspace } = useWorkspace()
+  return <QuoteLifecyclePage key={activeWorkspace.workspaceId} />
+}
+
 function AuthRouter() {
   const route = currentRoute()
   const [authReady, setAuthReady] = useState(false)
@@ -98,6 +104,7 @@ function AuthRouter() {
   const [workspaceNameHint, setWorkspaceNameHint] = useState<string | null | undefined>(undefined)
   const [workspaceState, setWorkspaceState] = useState<WorkspaceBootState>('idle')
   const [workspaceError, setWorkspaceError] = useState('')
+  const [onboardingWorkspace, setOnboardingWorkspace] = useState<WorkspaceContext | null>(null)
   const [onboardingAttempt, setOnboardingAttempt] = useState(0)
   const [signingOut, setSigningOut] = useState(false)
 
@@ -113,6 +120,7 @@ function AuthRouter() {
       if (!nextSignedIn) {
         setWorkspaceState('idle')
         setWorkspaceError('')
+        setOnboardingWorkspace(null)
       }
       setAuthReady(true)
     }
@@ -161,6 +169,7 @@ function AuthRouter() {
         setWorkspaceError(result.message)
         return
       }
+      setOnboardingWorkspace(result.workspace)
       setWorkspaceState('ready')
     })
 
@@ -221,14 +230,14 @@ function AuthRouter() {
     return <AuthLoading message="Redirecting to sign in…" />
   }
 
-  if (workspaceState !== 'ready') {
+  if (workspaceState !== 'ready' || !sessionUserId || !onboardingWorkspace) {
     return <AuthLoading message="Preparing your workspace…" />
   }
 
   if (route === '/quotes') {
     return (
-      <>
-        <QuoteLifecyclePage />
+      <WorkspaceProvider userId={sessionUserId} initialWorkspace={onboardingWorkspace}>
+        <WorkspaceBoundQuoteLifecyclePage />
         <button
           className="session-signout"
           type="button"
@@ -238,12 +247,12 @@ function AuthRouter() {
         >
           {signingOut ? 'Signing out…' : 'Sign out'}
         </button>
-      </>
+      </WorkspaceProvider>
     )
   }
 
   return (
-    <>
+    <WorkspaceProvider userId={sessionUserId} initialWorkspace={onboardingWorkspace}>
       <App />
       <button
         className="session-signout"
@@ -254,7 +263,7 @@ function AuthRouter() {
       >
         {signingOut ? 'Signing out…' : 'Sign out'}
       </button>
-    </>
+    </WorkspaceProvider>
   )
 }
 
