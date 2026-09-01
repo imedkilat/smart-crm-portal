@@ -8,6 +8,8 @@ on:
       - 'scripts/e2e-controlled-preflight.mjs'
       - 'scripts/e2e-outbound-idempotency-replay.mjs'
       - 'scripts/e2e-ai-scope-boundary.mjs'
+      - 'scripts/instrument-follow-up-telemetry.mjs'
+      - 'n8n/workflows/crm-follow-up-engine-mvp.json'
       - 'playwright.config.ts'
       - 'package.json'
       - 'package-lock.json'
@@ -53,6 +55,36 @@ jobs:
           node --check scripts/e2e-controlled-preflight.mjs
           node --check scripts/e2e-outbound-idempotency-replay.mjs
           node --check scripts/e2e-ai-scope-boundary.mjs
+
+      - name: Validate Follow-Up telemetry export
+        run: |
+          node --check scripts/instrument-follow-up-telemetry.mjs
+          node scripts/instrument-follow-up-telemetry.mjs
+          node - <<'NODE'
+          const fs = require('fs');
+          const workflow = JSON.parse(fs.readFileSync('n8n/workflows/crm-follow-up-engine-mvp.json', 'utf8'));
+          const byName = new Map(workflow.nodes.map((node) => [node.name, node]));
+          for (const name of [
+            'Prepare Follow-Up Write Telemetry',
+            'Record Follow-Up Write Telemetry',
+            'Prepare Follow-Up Suppressed Telemetry',
+            'Record Follow-Up Suppressed Telemetry',
+          ]) {
+            if (!byName.has(name)) throw new Error(`Missing telemetry node: ${name}`);
+          }
+          for (const name of ['Record Follow-Up Write Telemetry', 'Record Follow-Up Suppressed Telemetry']) {
+            const node = byName.get(name);
+            if (node.parameters?.tableId !== 'automation_runs') throw new Error(`${name} must write only automation_runs`);
+            if (node.onError !== 'continueRegularOutput') throw new Error(`${name} must remain non-blocking`);
+          }
+          const safety = byName.get('Safety Configuration');
+          const assignments = safety?.parameters?.assignments?.assignments || [];
+          const values = new Map(assignments.map((row) => [row.name, row.value]));
+          if (values.get('write_enabled') !== false || values.get('production_mode') !== false) {
+            throw new Error('Repo Follow-Up safety defaults must remain write_enabled=false and production_mode=false');
+          }
+          console.log('Follow-Up telemetry export CI validation PASS');
+          NODE
 
       - name: Require tenant-isolation QA secrets
         shell: bash
