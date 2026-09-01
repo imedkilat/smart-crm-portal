@@ -128,10 +128,7 @@ const statsByWorkspace = new Map(
 const scopedWorkspaceIds = Array.isArray(scope.scoped_workspace_ids)
   ? scope.scoped_workspace_ids.map(String)
   : [];
-const workspaceIds = [...new Set([
-  ...scopedWorkspaceIds,
-  ...workspaceStats.filter((row) => row?.workspace_id).map((row) => String(row.workspace_id)),
-])];
+const workspaceIds = [...new Set(scopedWorkspaceIds)];
 
 return workspaceIds
   .filter((workspaceId) => !authorizedWorkspaceIds.has(workspaceId))

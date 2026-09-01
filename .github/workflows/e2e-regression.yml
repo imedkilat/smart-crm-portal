@@ -77,6 +77,13 @@ jobs:
             if (node.parameters?.tableId !== 'automation_runs') throw new Error(`${name} must write only automation_runs`);
             if (node.onError !== 'continueRegularOutput') throw new Error(`${name} must remain non-blocking`);
           }
+          const suppressedCode = byName.get('Prepare Follow-Up Suppressed Telemetry')?.parameters?.jsCode || '';
+          if (!suppressedCode.includes('const workspaceIds = [...new Set(scopedWorkspaceIds)];')) {
+            throw new Error('Suppressed Follow-Up telemetry must be limited to scoped_workspace_ids');
+          }
+          if (suppressedCode.includes('...workspaceStats.filter')) {
+            throw new Error('Suppressed Follow-Up telemetry must not union unscoped workspace_stats');
+          }
           const safety = byName.get('Safety Configuration');
           const assignments = safety?.parameters?.assignments?.assignments || [];
           const values = new Map(assignments.map((row) => [row.name, row.value]));
