@@ -101,6 +101,75 @@ The transformer at `scripts/instrument-follow-up-telemetry.mjs` is deterministic
 
 The repo export is not evidence that the published n8n workflow has been updated. Production telemetry begins only after the validated export is explicitly synced/published to the live Follow-Up workflow and a controlled run proves the expected row without changing business-write safety settings.
 
+## Follow-Up Health card semantics
+
+The Follow-Up card uses normalized `automation_runs` as its primary heartbeat and keeps `lead_activities` only as a secondary 24-hour business-event metric.
+
+Workspace settings take precedence over execution telemetry:
+
+- workspace paused -> `Off`
+- workspace disabled -> `Off`
+
+For an enabled, unpaused workspace, the latest `automation_key = follow-up-engine` row drives the card:
+
+- recent `succeeded` -> `Healthy`
+- recent `suppressed` -> `Safe mode`; selection ran but business writes were not authorized
+- recent `skipped` -> `Safe mode`; the producer deliberately recorded a no-op
+- recent `failed` -> `Needs attention`
+- recent `running` -> `Waiting`
+- no normalized run -> `Waiting`
+- latest run older than 150 minutes -> `Waiting` with a stale-heartbeat message
+
+The 150-minute window intentionally gives an hourly schedule room for normal scheduler/runtime delay while still surfacing a missing heartbeat well before the next business day.
+
+## Scheduled-observability activation gate
+
+Real business writes are not part of the scheduled-observability gate. The first live schedule activation must keep:
+
+- `write_enabled=false`
+- `production_mode=true`
+- QA allowlists blank
+- the hourly workflow published/active only after the exact production version is re-verified
+
+Immediately before activation, record an ISO timestamp as the gate baseline. After the first real hourly execution, run the read-only verifier:
+
+```bash
+FOLLOW_UP_EXPECTED_AFTER="<activation-iso-timestamp>" \
+FOLLOW_UP_EXPECTED_WORKSPACE_ID="<qa-workspace-id>" \
+npm run verify:follow-up:scheduled
+```
+
+Optional verifier inputs:
+
+- `FOLLOW_UP_EXPECTED_RUN_REF` pins verification to an exact n8n execution ID when it is already known.
+- `FOLLOW_UP_MAX_AGE_MINUTES` changes the default 90-minute freshness limit.
+
+The verifier authenticates as the configured non-admin primary QA identity and requires a fresh Follow-Up row after the activation timestamp with:
+
+- the caller's own workspace only
+- `automation_key=follow-up-engine`
+- `source=n8n`
+- `trigger_type=scheduled`
+- `status=suppressed` while writes remain disabled
+- populated `run_ref`
+- no secret-like metadata/error payloads
+
+This verifier is read-only. Business-table deltas are checked independently against the pre-activation baseline for `lead_tasks`, `lead_activities`, `lead_quotes`, `outbound_email_deliveries`, and `outbound_email_attempts`.
+
+The scheduled-observability gate passes only when the fresh heartbeat is correct, no foreign workspace telemetry appears, and all protected business tables remain unchanged. The workflow may stay scheduled with writes disabled after this gate; enabling writes is a separate explicit approval.
+
+## Emergency rollback
+
+If scheduled observability produces an unexpected business write, foreign-workspace telemetry, malformed run status, repeated unexpected run rows, or any other safety discrepancy:
+
+1. keep or restore `write_enabled=false` immediately
+2. unpublish/deactivate the Follow-Up schedule if it is active
+3. do not delete or rewrite unexpected CRM rows; preserve them as evidence
+4. record the n8n execution ID, workflow version, timestamps and affected workspace/record IDs
+5. audit Supabase read-only before deciding on cleanup or another rollout attempt
+
+No cleanup, real-write re-enable, or reactivation should be bundled into the rollback itself.
+
 ## Producer rollout order
 
 1. Follow-Up Engine scheduled runs
