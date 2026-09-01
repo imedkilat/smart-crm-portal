@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Database } from '../types/database'
 import LeadProfileDrawer from '../components/LeadProfileDrawer'
+import '../automation-health.css'
 
 type Lead = Database['public']['Tables']['leads']['Row']
 type RoutingEvent = Database['public']['Tables']['lead_routing_history']['Row']
