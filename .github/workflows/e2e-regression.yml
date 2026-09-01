@@ -10,6 +10,9 @@ on:
       - 'scripts/e2e-ai-scope-boundary.mjs'
       - 'scripts/instrument-follow-up-telemetry.mjs'
       - 'scripts/verify-follow-up-scheduled-observability.mjs'
+      - 'scripts/follow-up-business-snapshot.mjs'
+      - 'scripts/follow-up-business-snapshot-lib.mjs'
+      - 'scripts/follow-up-business-snapshot.test.mjs'
       - 'n8n/workflows/crm-follow-up-engine-mvp.json'
       - 'playwright.config.ts'
       - 'package.json'
@@ -57,6 +60,10 @@ jobs:
           node --check scripts/e2e-outbound-idempotency-replay.mjs
           node --check scripts/e2e-ai-scope-boundary.mjs
           node --check scripts/verify-follow-up-scheduled-observability.mjs
+          node --check scripts/follow-up-business-snapshot.mjs
+          node --check scripts/follow-up-business-snapshot-lib.mjs
+          node --check scripts/follow-up-business-snapshot.test.mjs
+          node --test scripts/follow-up-business-snapshot.test.mjs
 
       - name: Validate Follow-Up telemetry export
         run: |
@@ -106,6 +113,24 @@ jobs:
             fi
           done
           exit "$missing"
+
+      - name: Smoke-test read-only Follow-Up business snapshot
+        shell: bash
+        run: |
+          snapshot_file="$RUNNER_TEMP/follow-up-business-snapshot.json"
+          npm run --silent snapshot:follow-up:business > "$snapshot_file"
+          SNAPSHOT_FILE="$snapshot_file" node - <<'NODE'
+          const fs = require('fs');
+          const snapshot = JSON.parse(fs.readFileSync(process.env.SNAPSHOT_FILE, 'utf8'));
+          if (snapshot.kind !== 'smart-crm-follow-up-business-snapshot') throw new Error('Unexpected snapshot kind');
+          const tables = ['lead_tasks', 'lead_activities', 'lead_quotes', 'outbound_email_deliveries', 'outbound_email_attempts'];
+          for (const table of tables) {
+            const value = snapshot.tables?.[table];
+            if (!Number.isInteger(value?.count) || value.count < 0) throw new Error(`Invalid ${table} count`);
+            if (!/^[a-f0-9]{64}$/.test(value?.fingerprint_sha256 || '')) throw new Error(`Invalid ${table} fingerprint`);
+          }
+          console.log('Read-only Follow-Up business snapshot PASS');
+          NODE
 
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
