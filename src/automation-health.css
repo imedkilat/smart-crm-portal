@@ -1,0 +1,207 @@
+.health-info-banner {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 15px;
+  padding: 12px 15px;
+  border: 1px solid #d8e5ff;
+  border-radius: 12px;
+  background: #f5f8ff;
+  color: #3b5ba9;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.health-info-banner strong { color: #284a98; }
+.health-info-banner span { color: #6b7ca4; text-align: right; }
+
+.health-kpis .health-summary.healthy { border-color: #d7efdf; background: linear-gradient(145deg, #fff, #f7fcf8); }
+.health-kpis .health-summary.attention { border-color: #f5d9d7; background: linear-gradient(145deg, #fff, #fff8f7); }
+.health-word { font-size: 23px !important; letter-spacing: -.035em !important; }
+
+.health-card-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 13px;
+  margin-bottom: 15px;
+}
+
+.health-automation-card {
+  position: relative;
+  min-width: 0;
+  padding: 18px;
+  overflow: hidden;
+}
+.health-automation-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: #d0d5dd;
+}
+.health-automation-card.healthy::before { background: #12b76a; }
+.health-automation-card.attention::before { background: #f04438; }
+.health-automation-card.safe::before { background: #6172f3; }
+.health-automation-card.off::before { background: #98a2b3; }
+.health-automation-card.waiting::before { background: #f79009; }
+
+.health-card-topline,
+.health-section-heading,
+.health-incident-title,
+.health-card-meta {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.health-card-topline h2,
+.health-section-heading h2 {
+  margin: 5px 0 0;
+  color: #172033;
+  font-size: 15px;
+}
+.health-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 25px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: #f2f4f7;
+  color: #667085;
+  font-size: 9.5px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.health-state i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.health-state.healthy { background: #ecfdf3; color: #067647; }
+.health-state.attention { background: #fff1f0; color: #b42318; }
+.health-state.safe { background: #eef4ff; color: #3538cd; }
+.health-state.off { background: #f2f4f7; color: #667085; }
+.health-state.waiting { background: #fff8e7; color: #9a6700; }
+
+.health-card-status {
+  display: block;
+  margin-top: 18px;
+  color: #344054;
+  font-size: 12px;
+}
+.health-automation-card > p {
+  min-height: 34px;
+  margin: 6px 0 16px;
+  color: #7b8498;
+  font-size: 10.8px;
+  line-height: 1.55;
+}
+.health-card-meta {
+  padding-top: 12px;
+  border-top: 1px solid #eef1f5;
+  color: #98a2b3;
+  font-size: 9.8px;
+}
+.health-card-meta span:last-child { text-align: right; }
+
+.health-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(300px, .72fr);
+  gap: 15px;
+  margin-bottom: 15px;
+  align-items: start;
+}
+.health-incidents-panel,
+.health-delivery-panel { overflow: hidden; }
+.health-section-heading {
+  padding: 18px 20px;
+  border-bottom: 1px solid #e9edf4;
+}
+.health-incident-list { display: grid; }
+.health-incident {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  gap: 11px;
+  align-items: start;
+  padding: 14px 20px;
+  border-bottom: 1px solid #eef1f5;
+}
+.health-incident:last-child { border-bottom: 0; }
+.health-incident-dot {
+  width: 7px;
+  height: 7px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: #f04438;
+  box-shadow: 0 0 0 4px rgba(240, 68, 56, .08);
+}
+.health-incident-title { justify-content: flex-start; }
+.health-incident-title strong { color: #344054; font-size: 11.5px; }
+.health-incident-title span {
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: #f2f4f7;
+  color: #667085;
+  font-size: 8.8px;
+  font-weight: 750;
+}
+.health-incident p { margin: 5px 0 0; color: #7b8498; font-size: 10.3px; line-height: 1.45; }
+.health-incident time { color: #98a2b3; font-size: 9.5px; white-space: nowrap; }
+.health-empty-state { padding: 25px 20px; text-align: center; }
+.health-empty-state strong,
+.health-empty-state span { display: block; }
+.health-empty-state strong { color: #475467; font-size: 12px; }
+.health-empty-state span { margin-top: 6px; color: #98a2b3; font-size: 10.5px; }
+
+.health-ledger-list { display: grid; padding: 4px 20px 10px; }
+.health-ledger-row { padding: 14px 0; border-bottom: 1px solid #eef1f5; }
+.health-ledger-row:last-child { border-bottom: 0; }
+.health-ledger-row span,
+.health-ledger-row strong,
+.health-ledger-row small { display: block; }
+.health-ledger-row span { color: #98a2b3; font-size: 9.5px; font-weight: 750; text-transform: uppercase; letter-spacing: .035em; }
+.health-ledger-row strong { margin-top: 5px; color: #344054; font-size: 12px; text-transform: capitalize; }
+.health-ledger-row small { margin-top: 4px; color: #7b8498; font-size: 9.8px; line-height: 1.45; }
+
+.health-routing-panel { margin-bottom: 8px; }
+.health-toolbar-copy { margin: 5px 0 0; color: #8a94a8; font-size: 10.5px; line-height: 1.45; }
+.health-routing-mini-stats {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 20px;
+  border-bottom: 1px solid #eef1f5;
+  background: #fcfcfd;
+  overflow-x: auto;
+}
+.health-routing-mini-stats span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 5px 8px;
+  border: 1px solid #e8ebf0;
+  border-radius: 8px;
+  background: #fff;
+  color: #8a94a8;
+  font-size: 9.5px;
+  white-space: nowrap;
+}
+.health-routing-mini-stats strong { color: #475467; font-size: 10.5px; }
+
+@media (max-width: 1120px) {
+  .health-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .health-detail-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 720px) {
+  .health-info-banner { flex-direction: column; }
+  .health-info-banner span { text-align: left; }
+  .health-card-grid { grid-template-columns: 1fr; }
+  .health-card-meta { flex-direction: column; }
+  .health-card-meta span:last-child { text-align: left; }
+  .health-incident { grid-template-columns: 8px minmax(0, 1fr); }
+  .health-incident time { grid-column: 2; }
+  .health-section-heading { align-items: flex-start; flex-direction: column; }
+}
