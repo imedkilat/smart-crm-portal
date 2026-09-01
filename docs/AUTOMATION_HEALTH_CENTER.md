@@ -158,6 +158,41 @@ This verifier is read-only. Business-table deltas are checked independently agai
 
 The scheduled-observability gate passes only when the fresh heartbeat is correct, no foreign workspace telemetry appears, and all protected business tables remain unchanged. The workflow may stay scheduled with writes disabled after this gate; enabling writes is a separate explicit approval.
 
+## Read-only business-table baseline and comparison
+
+The scheduled-observability gate uses a separate authenticated snapshot for the five protected business tables:
+
+- `lead_tasks`
+- `lead_activities`
+- `lead_quotes`
+- `outbound_email_deliveries`
+- `outbound_email_attempts`
+
+The snapshot utility signs in with the two configured non-admin QA identities, selects exactly one target workspace by `FOLLOW_UP_EXPECTED_WORKSPACE_ID` or the default `Smart CRM Starter QA` name, and performs SELECT-only tenant-scoped reads. It outputs only counts and SHA-256 fingerprints of non-content operational fields. It does not output lead names, task descriptions, activity titles, email recipients/bodies, or metadata payloads.
+
+Immediately before schedule activation, capture a timestamped baseline file:
+
+```bash
+npm run snapshot:follow-up:business -- --output follow-up-business-baseline-<activation-timestamp>.json
+```
+
+The output path is created exclusively; the utility refuses to overwrite existing evidence. After the first genuine scheduled run and the telemetry verifier pass, compare the current state with the saved baseline:
+
+```bash
+npm run verify:follow-up:business -- follow-up-business-baseline-<activation-timestamp>.json
+```
+
+The comparison fails with a non-zero exit code if any protected table has a count delta or a changed fingerprint. Fingerprints catch selected operational-field updates even when the row count stays the same. A passing comparison requires all five tables to report `unchanged=true`.
+
+Optional targeting inputs:
+
+- `FOLLOW_UP_EXPECTED_WORKSPACE_ID` pins both capture and comparison to an exact workspace.
+- `FOLLOW_UP_EXPECTED_WORKSPACE_NAME` changes the default target name.
+- `FOLLOW_UP_SNAPSHOT_FILE` is an environment-variable alternative to `--output`.
+- `FOLLOW_UP_BASELINE_FILE` is an environment-variable alternative to the comparison path.
+
+The baseline and comparison utilities never use `service_role`, never bypass RLS, and never insert, update, delete, invoke a provider, or call n8n.
+
 ## Emergency rollback
 
 If scheduled observability produces an unexpected business write, foreign-workspace telemetry, malformed run status, repeated unexpected run rows, or any other safety discrepancy:
