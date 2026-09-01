@@ -136,7 +136,7 @@ Immediately before activation, record an ISO timestamp as the gate baseline. Aft
 ```bash
 FOLLOW_UP_EXPECTED_AFTER="<activation-iso-timestamp>" \
 FOLLOW_UP_EXPECTED_WORKSPACE_ID="<qa-workspace-id>" \
-npm run verify:follow-up:scheduled
+node scripts/verify-follow-up-scheduled-observability.mjs
 ```
 
 Optional verifier inputs:
