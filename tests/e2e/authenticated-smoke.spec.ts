@@ -27,5 +27,10 @@ test.describe('credential-gated protected-route smoke', () => {
     await page.goto('/ai-brain')
     await expect(page).toHaveURL(/\/ai-brain$/)
     await expect(page).toHaveTitle(/AI Brain · Smart CRM/)
+
+    await page.goto('/automation')
+    await expect(page).toHaveURL(/\/automation$/)
+    await expect(page.getByRole('heading', { name: 'Automation Health Center' })).toBeVisible()
+    await expect(page.getByText('System health', { exact: true })).toBeVisible()
   })
 })
