@@ -13,7 +13,7 @@ const HANDLED_EVENTS = new Set([
   'invoice.payment_failed',
 ])
 
-type AdminClient = ReturnType<typeof createClient>
+type AdminClient = ReturnType<typeof createClient<any>>
 
 type PlanRow = {
   id: string
