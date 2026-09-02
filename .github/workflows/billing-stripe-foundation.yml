@@ -6,9 +6,14 @@ on:
       - 'supabase/config.toml'
       - 'supabase/functions/crm-billing-checkout/**'
       - 'supabase/functions/crm-billing-portal/**'
+      - 'supabase/functions/crm-billing-change-plan/**'
+      - 'supabase/functions/crm-billing-schedule-change/**'
       - 'supabase/functions/stripe-billing-webhook/**'
+      - 'supabase/migrations/*billing_change*'
       - 'scripts/verify-stripe-test-foundation.mjs'
+      - 'scripts/verify-stripe-scheduled-changes.mjs'
       - 'docs/BILLING_STRIPE_TEST_P0_3.md'
+      - 'docs/BILLING_SCHEDULED_CHANGES_P0_5.md'
       - '.github/workflows/billing-stripe-foundation.yml'
   workflow_dispatch:
 
@@ -32,6 +37,8 @@ jobs:
         run: |
           node --check scripts/verify-stripe-test-foundation.mjs
           node scripts/verify-stripe-test-foundation.mjs
+          node --check scripts/verify-stripe-scheduled-changes.mjs
+          node scripts/verify-stripe-scheduled-changes.mjs
 
       - name: Set up Deno
         uses: denoland/setup-deno@v2
@@ -42,4 +49,6 @@ jobs:
         run: |
           deno check --node-modules-dir=auto supabase/functions/crm-billing-checkout/index.ts
           deno check --node-modules-dir=auto supabase/functions/crm-billing-portal/index.ts
+          deno check --node-modules-dir=auto supabase/functions/crm-billing-change-plan/index.ts
+          deno check --node-modules-dir=auto supabase/functions/crm-billing-schedule-change/index.ts
           deno check --node-modules-dir=auto supabase/functions/stripe-billing-webhook/index.ts
