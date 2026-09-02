@@ -7,6 +7,7 @@ const MAX_BODY_BYTES = 64 * 1024
 const RATE_LIMIT = 30
 const RATE_WINDOW_SECONDS = 60
 const ALLOWED_STATUSES = new Set(['Hot', 'Warm', 'Cold'])
+const OUTBOUND_STATUSES = new Set(['Hot', 'Warm'])
 
 type EntitlementGate = {
   allowed: boolean
@@ -19,6 +20,13 @@ type EntitlementGate = {
   remaining_value: number | null
   period_start: string
   period_end: string
+}
+
+type OutboundSettings = {
+  enabled: boolean
+  mode: 'disabled' | 'simulate' | 'live'
+  provider: string | null
+  paused_until: string | null
 }
 
 function isAllowedOrigin(req: Request) {
@@ -74,10 +82,36 @@ async function checkWorkspaceEntitlement(
   })
 
   if (error || !data?.length) {
-    console.error('Routing entitlement check failed', { code: error?.code })
+    console.error('Routing entitlement check failed', { code: error?.code, entitlementKey })
     return null
   }
   return data[0] as EntitlementGate
+}
+
+async function loadOutboundSettings(admin: ReturnType<typeof createClient>, workspaceId: string) {
+  const { data, error } = await admin
+    .from('workspace_outbound_email_settings')
+    .select('enabled, mode, provider, paused_until')
+    .eq('workspace_id', workspaceId)
+    .maybeSingle()
+
+  if (error || !data) {
+    console.error('Outbound routing settings check failed', { code: error?.code })
+    return null
+  }
+
+  return data as OutboundSettings
+}
+
+function outboundBlockReason(settings: OutboundSettings) {
+  if (settings.enabled !== true || settings.mode === 'disabled') return 'outbound_disabled'
+  if (settings.mode !== 'live') return 'outbound_not_live'
+  if (!settings.provider) return 'outbound_provider_missing'
+  if (settings.paused_until) {
+    const pausedUntil = new Date(settings.paused_until).getTime()
+    if (Number.isFinite(pausedUntil) && pausedUntil > Date.now()) return 'outbound_paused'
+  }
+  return null
 }
 
 async function reserveIdempotencyKey(admin: ReturnType<typeof createClient>, key: string, userId: string) {
@@ -145,6 +179,7 @@ Deno.serve(async (req: Request) => {
   if (validationError) return json(req, 422, { error: validationError })
 
   const leadId = Number(payload.lead_id)
+  const routingStatus = String(payload.routing_status)
   const { data: leadRecord, error: leadError } = await admin
     .from('leads')
     .select('id, public_id, name, email, summary, category, intent, source, workspace_id')
@@ -170,6 +205,34 @@ Deno.serve(async (req: Request) => {
       plan_code: entitlement.plan_code,
       subscription_status: entitlement.subscription_status,
     })
+  }
+
+  // The legacy n8n status router still contains direct Gmail nodes for Hot/Warm.
+  // Until those sends are routed through crm-outbound-email, fail closed here so
+  // disabled, simulated, paused, or unentitled workspaces cannot send real mail.
+  if (OUTBOUND_STATUSES.has(routingStatus)) {
+    const outboundEntitlement = await checkWorkspaceEntitlement(admin, leadRecord.workspace_id, 'outbound_email')
+    if (!outboundEntitlement) return json(req, 503, { error: 'Outbound email entitlement is temporarily unavailable' })
+    if (!outboundEntitlement.allowed) {
+      return json(req, 403, {
+        error: 'Workspace plan does not include outbound email',
+        billing_reason: outboundEntitlement.reason,
+        plan_code: outboundEntitlement.plan_code,
+        subscription_status: outboundEntitlement.subscription_status,
+      })
+    }
+
+    const outboundSettings = await loadOutboundSettings(admin, leadRecord.workspace_id)
+    if (!outboundSettings) return json(req, 503, { error: 'Outbound email controls are temporarily unavailable' })
+
+    const blockReason = outboundBlockReason(outboundSettings)
+    if (blockReason) {
+      return json(req, 409, {
+        error: 'Outbound email is not currently authorized for status routing',
+        outbound_reason: blockReason,
+        outbound_mode: outboundSettings.mode,
+      })
+    }
   }
 
   const rate = await consumeRateLimit(admin, leadRecord.workspace_id, user.id)
