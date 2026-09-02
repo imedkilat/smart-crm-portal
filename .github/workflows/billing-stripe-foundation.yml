@@ -1,0 +1,45 @@
+name: Billing Stripe test foundation
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/config.toml'
+      - 'supabase/functions/crm-billing-checkout/**'
+      - 'supabase/functions/crm-billing-portal/**'
+      - 'supabase/functions/stripe-billing-webhook/**'
+      - 'scripts/verify-stripe-test-foundation.mjs'
+      - 'docs/BILLING_STRIPE_TEST_P0_3.md'
+      - '.github/workflows/billing-stripe-foundation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Validate source safety contract
+        run: |
+          node --check scripts/verify-stripe-test-foundation.mjs
+          node scripts/verify-stripe-test-foundation.mjs
+
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Type-check billing Edge Functions
+        run: |
+          deno check supabase/functions/crm-billing-checkout/index.ts
+          deno check supabase/functions/crm-billing-portal/index.ts
+          deno check supabase/functions/stripe-billing-webhook/index.ts
