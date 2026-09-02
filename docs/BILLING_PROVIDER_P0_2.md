@@ -16,7 +16,8 @@ This phase does **not** add Checkout, Customer Portal, webhook ingestion, Stripe
 
 `public.subscriptions.billing_provider` is non-null and restricted to `none | manual | stripe`.
 
-- `stripe` requires both `stripe_customer_id` and `stripe_subscription_id`.
+- A normal Stripe-managed row requires `stripe_customer_id`.
+- `stripe_subscription_id` is also required unless the subscription is still `incomplete`; this permits the safe Checkout transition where a customer exists before a subscription is finalized.
 - `none` and `manual` require both Stripe identity fields to be null.
 - Existing rows are backfilled conservatively:
   - rows already carrying a Stripe identity become `stripe`;
@@ -63,11 +64,13 @@ Before production rollout:
 5. Confirm the three existing manual provisioning billing events will backfill to `manual`.
 6. Confirm constraints reject:
    - unknown provider values;
-   - `stripe` without both Stripe identity fields;
-   - `manual`/`none` with Stripe identity fields;
+   - Stripe rows without `stripe_customer_id`;
+   - active/trialing Stripe rows without `stripe_subscription_id`;
+   - `manual`/`none` rows with Stripe identity fields;
    - Stripe billing events without `stripe_event_id`;
    - non-Stripe billing events carrying `stripe_event_id`.
-7. Re-run Supabase security advisors after migration.
+7. Confirm an `incomplete` Stripe row may carry `stripe_customer_id` before a subscription ID is available.
+8. Re-run Supabase security advisors after migration.
 
 ## Rollout order
 
@@ -80,6 +83,6 @@ Before production rollout:
 
 ## Next phase
 
-Billing P0-3 may introduce server-trusted Stripe Product/Price mappings and Checkout/customer creation. Before doing so, Stripe-specific code must only mutate subscriptions whose `billing_provider` is `stripe` (or explicitly transition a row into that state with both Stripe identity fields present).
+Billing P0-3 may introduce server-trusted Stripe Product/Price mappings and Checkout/customer creation. Stripe-specific code must only mutate subscriptions whose `billing_provider` is `stripe`, or explicitly transition a row into `stripe` with the required Stripe identity for its current lifecycle state.
 
 Real charges remain **NO-GO** until Checkout, signed webhook processing, lifecycle synchronization, Customer Portal, and test-mode E2E are complete and explicitly approved for live-mode cutover.
