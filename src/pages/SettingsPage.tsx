@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
+import { invokeSecureAutomation } from '../lib/secureFunctions'
 import type { Database } from '../types/database'
 import WorkspaceBrandingPanel from '../components/WorkspaceBrandingPanel'
 import MessageTemplatesPanel from '../components/MessageTemplatesPanel'
@@ -12,6 +13,10 @@ const LEAD_WEBHOOK = import.meta.env.VITE_N8N_LEAD_WEBHOOK_URL || 'https://tolak
 const STATUS_WEBHOOK = import.meta.env.VITE_N8N_STATUS_WEBHOOK_URL || 'https://tolakautomations.app.n8n.cloud/webhook/smart-crm-status-route'
 
 type Lead = Database['public']['Tables']['leads']['Row']
+type BillingPlanCode = 'starter' | 'pro'
+type BillingCycleChoice = 'monthly' | 'annual'
+type BillingProvider = 'none' | 'manual' | 'stripe'
+type BillingNotice = { tone: 'success' | 'info'; message: string }
 
 type Props = {
   onOpenRunLog: () => void
@@ -24,6 +29,20 @@ function endpointLabel(url: string) {
     return `${parsed.hostname}${parsed.pathname}`
   } catch {
     return 'Configured endpoint'
+  }
+}
+
+function billingRedirect(text: string, field: 'checkout_url' | 'portal_url', allowedHost: string) {
+  try {
+    const parsed = JSON.parse(text) as Record<string, unknown>
+    const value = parsed[field]
+    if (typeof value !== 'string' || !value.trim()) throw new Error('missing redirect')
+
+    const url = new URL(value)
+    if (url.protocol !== 'https:' || url.hostname !== allowedHost) throw new Error('unexpected redirect')
+    return url.toString()
+  } catch {
+    throw new Error('Billing provider returned an invalid redirect. Please try again.')
   }
 }
 
@@ -40,10 +59,17 @@ export default function SettingsPage({ onOpenRunLog, onLeadRestored }: Props) {
   const [planCode, setPlanCode] = useState<string | null>(null)
   const [subscriptionStatus, setSubscriptionStatus] = useState<string | null>(null)
   const [billingCycle, setBillingCycle] = useState<string | null>(null)
+  const [billingProvider, setBillingProvider] = useState<BillingProvider | null>(null)
   const [deploymentType, setDeploymentType] = useState<string | null>(null)
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false)
   const [checkedAt, setCheckedAt] = useState<Date | null>(null)
   const [showArchive, setShowArchive] = useState(false)
+  const [billingPlanChoice, setBillingPlanChoice] = useState<BillingPlanCode>('starter')
+  const [billingCycleChoice, setBillingCycleChoice] = useState<BillingCycleChoice>('monthly')
+  const [billingActionLoading, setBillingActionLoading] = useState<'checkout' | 'portal' | null>(null)
+  const [billingActionError, setBillingActionError] = useState<string | null>(null)
+  const [billingNotice, setBillingNotice] = useState<BillingNotice | null>(null)
+  const billingReturnHandledRef = useRef(false)
 
   const checkHealth = useCallback(async () => {
     if (!supabase) {
@@ -68,6 +94,7 @@ export default function SettingsPage({ onOpenRunLog, onLeadRestored }: Props) {
     let nextPlanCode: string | null = null
     let nextSubscriptionStatus: string | null = null
     let nextBillingCycle: string | null = null
+    let nextBillingProvider: BillingProvider | null = null
     let nextDeploymentType: string | null = null
 
     if (workspaceId) {
@@ -76,7 +103,7 @@ export default function SettingsPage({ onOpenRunLog, onLeadRestored }: Props) {
       const billingClient = supabase as unknown as SupabaseClient
       const { data: subscription } = await billingClient
         .from('subscriptions')
-        .select('plan_id, status, billing_cycle, deployment_type')
+        .select('plan_id, status, billing_cycle, billing_provider, deployment_type')
         .eq('workspace_id', workspaceId)
         .maybeSingle()
 
@@ -84,6 +111,11 @@ export default function SettingsPage({ onOpenRunLog, onLeadRestored }: Props) {
         nextSubscriptionStatus = String(subscription.status)
         nextBillingCycle = String(subscription.billing_cycle)
         nextDeploymentType = String(subscription.deployment_type)
+
+        const provider = String(subscription.billing_provider)
+        nextBillingProvider = provider === 'none' || provider === 'manual' || provider === 'stripe'
+          ? provider
+          : null
 
         const { data: plan } = await billingClient
           .from('plans')
@@ -105,6 +137,7 @@ export default function SettingsPage({ onOpenRunLog, onLeadRestored }: Props) {
     setPlanCode(nextPlanCode)
     setSubscriptionStatus(nextSubscriptionStatus)
     setBillingCycle(nextBillingCycle)
+    setBillingProvider(nextBillingProvider)
     setDeploymentType(nextDeploymentType)
     setIsPlatformAdmin(user?.app_metadata?.platform_role === 'platform_admin')
     setCheckedAt(new Date())
@@ -112,6 +145,80 @@ export default function SettingsPage({ onOpenRunLog, onLeadRestored }: Props) {
   }, [activeWorkspace.role, activeWorkspace.workspaceId])
 
   useEffect(() => { void checkHealth() }, [checkHealth])
+
+  useEffect(() => {
+    if (billingReturnHandledRef.current) return
+
+    const params = new URLSearchParams(window.location.search)
+    const returnState = params.get('billing')
+    if (!returnState || !['success', 'cancelled', 'portal-return'].includes(returnState)) return
+
+    billingReturnHandledRef.current = true
+
+    const url = new URL(window.location.href)
+    url.searchParams.delete('billing')
+    url.searchParams.delete('session_id')
+    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
+
+    if (returnState === 'success') {
+      setBillingNotice({ tone: 'success', message: 'Billing checkout completed. Subscription details are refreshing.' })
+    } else if (returnState === 'cancelled') {
+      setBillingNotice({ tone: 'info', message: 'Billing checkout was cancelled. Your current subscription was not changed.' })
+    } else {
+      setBillingNotice({ tone: 'info', message: 'Returned from billing management. Subscription details are refreshing.' })
+    }
+
+    void checkHealth()
+
+    if (returnState === 'success' || returnState === 'portal-return') {
+      const timer = window.setTimeout(() => { void checkHealth() }, 2500)
+      return () => window.clearTimeout(timer)
+    }
+  }, [checkHealth])
+
+  const canManageBilling = activeWorkspace.role === 'owner' || activeWorkspace.role === 'admin'
+
+  const handleUpgrade = useCallback(async () => {
+    if (billingActionLoading || !canManageBilling) return
+
+    setBillingActionError(null)
+    setBillingActionLoading('checkout')
+
+    try {
+      const response = await invokeSecureAutomation(
+        'crm-billing-checkout',
+        {
+          workspace_id: activeWorkspace.workspaceId,
+          plan_code: billingPlanChoice,
+          billing_cycle: billingCycleChoice,
+        },
+        { idempotencyKey: `billing-checkout:${crypto.randomUUID()}` },
+      )
+
+      window.location.assign(billingRedirect(response, 'checkout_url', 'checkout.stripe.com'))
+    } catch (error) {
+      setBillingActionError(error instanceof Error ? error.message : 'Unable to start billing checkout. Please try again.')
+      setBillingActionLoading(null)
+    }
+  }, [activeWorkspace.workspaceId, billingActionLoading, billingCycleChoice, billingPlanChoice, canManageBilling])
+
+  const handleManageBilling = useCallback(async () => {
+    if (billingActionLoading || !canManageBilling) return
+
+    setBillingActionError(null)
+    setBillingActionLoading('portal')
+
+    try {
+      const response = await invokeSecureAutomation('crm-billing-portal', {
+        workspace_id: activeWorkspace.workspaceId,
+      })
+
+      window.location.assign(billingRedirect(response, 'portal_url', 'billing.stripe.com'))
+    } catch (error) {
+      setBillingActionError(error instanceof Error ? error.message : 'Unable to open billing management. Please try again.')
+      setBillingActionLoading(null)
+    }
+  }, [activeWorkspace.workspaceId, billingActionLoading, canManageBilling])
 
   if (showArchive) {
     return (
@@ -190,7 +297,64 @@ export default function SettingsPage({ onOpenRunLog, onLeadRestored }: Props) {
             </div>
             <div className="owner-settings-row"><span>Entitlement</span><strong>{planCode || 'Unavailable'}</strong></div>
             <div className="owner-settings-row"><span>Billing</span><strong>{billingCycle || 'Unavailable'}</strong></div>
+            <div className="owner-settings-row"><span>Provider</span><strong>{billingProvider || 'Unavailable'}</strong></div>
             <div className="owner-settings-row"><span>Deployment</span><strong>{deploymentType || 'Unavailable'}</strong></div>
+
+            {billingNotice ? <div className={`settings-inline-message ${billingNotice.tone}`}>{billingNotice.message}</div> : null}
+            {billingActionError ? <div className="settings-inline-message error">{billingActionError}</div> : null}
+
+            {canManageBilling && billingProvider === 'none' && planCode === 'free' ? (
+              <div className="billing-upgrade-controls">
+                <div>
+                  <strong>Upgrade workspace</strong>
+                  <p>Choose a paid plan and billing cycle. Stripe securely handles payment details.</p>
+                </div>
+                <div className="billing-field-row">
+                  <label>
+                    <span>Plan</span>
+                    <select value={billingPlanChoice} onChange={(event) => setBillingPlanChoice(event.target.value as BillingPlanCode)} disabled={Boolean(billingActionLoading)}>
+                      <option value="starter">Starter</option>
+                      <option value="pro">Pro</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Billing cycle</span>
+                    <select value={billingCycleChoice} onChange={(event) => setBillingCycleChoice(event.target.value as BillingCycleChoice)} disabled={Boolean(billingActionLoading)}>
+                      <option value="monthly">Monthly</option>
+                      <option value="annual">Annual</option>
+                    </select>
+                  </label>
+                </div>
+                <button className="button primary billing-action-button" type="button" onClick={() => void handleUpgrade()} disabled={Boolean(billingActionLoading)}>
+                  {billingActionLoading === 'checkout' ? 'Opening checkout…' : 'Upgrade with Stripe →'}
+                </button>
+              </div>
+            ) : null}
+
+            {canManageBilling && billingProvider === 'stripe' ? (
+              <div className="billing-upgrade-controls">
+                <div>
+                  <strong>Stripe-managed subscription</strong>
+                  <p>Open the secure billing portal to manage payment and cancellation options.</p>
+                </div>
+                <button className="button secondary billing-action-button" type="button" onClick={() => void handleManageBilling()} disabled={Boolean(billingActionLoading)}>
+                  {billingActionLoading === 'portal' ? 'Opening billing…' : 'Manage billing →'}
+                </button>
+              </div>
+            ) : null}
+
+            {canManageBilling && billingProvider === 'manual' ? (
+              <div className="settings-inline-message info">This workspace is manually billed. Contact the platform administrator for plan or billing changes.</div>
+            ) : null}
+
+            {canManageBilling && billingProvider === 'none' && planCode !== 'free' ? (
+              <div className="settings-inline-message info">This billing state requires administrator review before self-service billing can be used.</div>
+            ) : null}
+
+            {!canManageBilling ? (
+              <div className="settings-inline-message info">Only workspace owners and administrators can manage billing.</div>
+            ) : null}
+
             <p className="settings-note">Follow-up automation is available on Starter, Pro and White Label plans when workspace follow-up settings are enabled.</p>
           </article>
 
