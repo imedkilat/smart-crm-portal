@@ -1,0 +1,18 @@
+# Function auth boundaries that must remain explicit in source control.
+# Authenticated CRM functions use the default JWT verification behavior.
+
+[functions.crm-billing-checkout]
+verify_jwt = true
+
+[functions.crm-billing-portal]
+verify_jwt = true
+
+# Stripe authenticates webhook requests with Stripe-Signature, not a Supabase JWT.
+# The handler verifies the raw body signature before any database mutation.
+[functions.stripe-billing-webhook]
+verify_jwt = false
+
+# Existing outbound gateway uses its own x-smart-crm-outbound-token and must not
+# be accidentally flipped to JWT verification by future CLI deployments.
+[functions.crm-outbound-email]
+verify_jwt = false
