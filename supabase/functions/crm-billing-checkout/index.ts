@@ -21,6 +21,7 @@ type PlanRow = {
 }
 
 type SubscriptionRow = {
+  plan_id: string
   billing_provider: 'none' | 'manual' | 'stripe'
   status: string
   billing_cycle: string
@@ -199,7 +200,7 @@ Deno.serve(async (req: Request) => {
 
   const { data: currentSubscription, error: subscriptionError } = await admin
     .from('subscriptions')
-    .select('billing_provider, status, billing_cycle, stripe_customer_id, stripe_subscription_id')
+    .select('plan_id, billing_provider, status, billing_cycle, stripe_customer_id, stripe_subscription_id')
     .eq('workspace_id', workspaceId)
     .maybeSingle()
 
@@ -228,6 +229,17 @@ Deno.serve(async (req: Request) => {
 
   if (subscription.stripe_customer_id || subscription.stripe_subscription_id) {
     return json(req, 409, { error: 'Subscription identity requires administrator review before Checkout' })
+  }
+
+  const { data: currentPlan, error: currentPlanError } = await admin
+    .from('plans')
+    .select('code')
+    .eq('id', subscription.plan_id)
+    .maybeSingle()
+
+  if (currentPlanError) return json(req, 503, { error: 'Current plan state is temporarily unavailable' })
+  if (currentPlan?.code !== 'free') {
+    return json(req, 409, { error: 'Self-service Checkout requires the canonical Free billing baseline' })
   }
 
   const stripe = new Stripe(stripeConfig.secretKey)
