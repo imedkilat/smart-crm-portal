@@ -10,6 +10,9 @@ verify_jwt = true
 [functions.crm-billing-change-plan]
 verify_jwt = true
 
+[functions.crm-billing-schedule-change]
+verify_jwt = true
+
 # Stripe authenticates webhook requests with Stripe-Signature, not a Supabase JWT.
 # The handler verifies the raw body signature before any database mutation.
 [functions.stripe-billing-webhook]
