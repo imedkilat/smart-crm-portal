@@ -8,6 +8,19 @@ const MAX_UPLOAD_BYTES = 8 * 1024 * 1024
 const RATE_LIMIT = 20
 const RATE_WINDOW_SECONDS = 60
 
+type EntitlementGate = {
+  allowed: boolean
+  reason: string
+  plan_code: string | null
+  subscription_status: string | null
+  entitlement_enabled: boolean
+  limit_value: number | null
+  used_value: number
+  remaining_value: number | null
+  period_start: string
+  period_end: string
+}
+
 function isAllowedOrigin(req: Request) {
   const origin = req.headers.get('origin')
   return !origin || origin === PROD_ORIGIN || LOCAL_ORIGINS.has(origin)
@@ -95,6 +108,23 @@ async function consumeRateLimit(admin: ReturnType<typeof createClient>, workspac
   return data[0] as { allowed: boolean; remaining: number; retry_after_seconds: number }
 }
 
+async function checkWorkspaceEntitlement(
+  admin: ReturnType<typeof createClient>,
+  workspaceId: string,
+  entitlementKey: string,
+) {
+  const { data, error } = await admin.rpc('check_workspace_entitlement', {
+    p_workspace_id: workspaceId,
+    p_entitlement_key: entitlementKey,
+  })
+
+  if (error || !data?.length) {
+    console.error('Lead intake entitlement check failed', { code: error?.code })
+    return null
+  }
+  return data[0] as EntitlementGate
+}
+
 function validateManualPayload(payload: unknown) {
   if (!payload || typeof payload !== 'object') return 'Request body must be a JSON object'
   const body = payload as Record<string, unknown>
@@ -129,6 +159,23 @@ Deno.serve(async (req: Request) => {
   const workspaceResult = await resolveWorkspace(admin, user.id, req.headers.get('x-workspace-id'))
   if ('error' in workspaceResult) return json(req, workspaceResult.error === 'Workspace access denied' ? 403 : 409, { error: workspaceResult.error })
   const { workspace } = workspaceResult
+
+  const entitlement = await checkWorkspaceEntitlement(admin, workspace.id, 'lead_intake')
+  if (!entitlement) return json(req, 503, { error: 'Lead billing entitlement is temporarily unavailable' })
+  if (!entitlement.allowed) {
+    const status = entitlement.reason === 'quota_exhausted' ? 429 : 403
+    return json(req, status, {
+      error: entitlement.reason === 'quota_exhausted'
+        ? 'Monthly lead creation limit has been reached for this workspace'
+        : 'Workspace is not entitled to lead intake',
+      billing_reason: entitlement.reason,
+      plan_code: entitlement.plan_code,
+      subscription_status: entitlement.subscription_status,
+      limit: entitlement.limit_value,
+      used: entitlement.used_value,
+      remaining: entitlement.remaining_value,
+    })
+  }
 
   const rate = await consumeRateLimit(admin, workspace.id, user.id)
   if (!rate) return json(req, 503, { error: 'Request protection is temporarily unavailable' })

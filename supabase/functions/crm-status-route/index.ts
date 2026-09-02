@@ -8,6 +8,19 @@ const RATE_LIMIT = 30
 const RATE_WINDOW_SECONDS = 60
 const ALLOWED_STATUSES = new Set(['Hot', 'Warm', 'Cold'])
 
+type EntitlementGate = {
+  allowed: boolean
+  reason: string
+  plan_code: string | null
+  subscription_status: string | null
+  entitlement_enabled: boolean
+  limit_value: number | null
+  used_value: number
+  remaining_value: number | null
+  period_start: string
+  period_end: string
+}
+
 function isAllowedOrigin(req: Request) {
   const origin = req.headers.get('origin')
   return !origin || origin === PROD_ORIGIN || LOCAL_ORIGINS.has(origin)
@@ -48,6 +61,23 @@ async function consumeRateLimit(admin: ReturnType<typeof createClient>, workspac
     return null
   }
   return data[0] as { allowed: boolean; remaining: number; retry_after_seconds: number }
+}
+
+async function checkWorkspaceEntitlement(
+  admin: ReturnType<typeof createClient>,
+  workspaceId: string,
+  entitlementKey: string,
+) {
+  const { data, error } = await admin.rpc('check_workspace_entitlement', {
+    p_workspace_id: workspaceId,
+    p_entitlement_key: entitlementKey,
+  })
+
+  if (error || !data?.length) {
+    console.error('Routing entitlement check failed', { code: error?.code })
+    return null
+  }
+  return data[0] as EntitlementGate
 }
 
 async function reserveIdempotencyKey(admin: ReturnType<typeof createClient>, key: string, userId: string) {
@@ -130,6 +160,17 @@ Deno.serve(async (req: Request) => {
     .maybeSingle()
   if (membershipError) return json(req, 503, { error: 'Workspace authorization is temporarily unavailable' })
   if (!membership) return json(req, 403, { error: 'Workspace access denied' })
+
+  const entitlement = await checkWorkspaceEntitlement(admin, leadRecord.workspace_id, 'follow_up_automation')
+  if (!entitlement) return json(req, 503, { error: 'Automation billing entitlement is temporarily unavailable' })
+  if (!entitlement.allowed) {
+    return json(req, 403, {
+      error: 'Workspace plan does not include follow-up automation',
+      billing_reason: entitlement.reason,
+      plan_code: entitlement.plan_code,
+      subscription_status: entitlement.subscription_status,
+    })
+  }
 
   const rate = await consumeRateLimit(admin, leadRecord.workspace_id, user.id)
   if (!rate) return json(req, 503, { error: 'Request protection is temporarily unavailable' })

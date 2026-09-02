@@ -8,6 +8,19 @@ const RATE_LIMIT = 15
 const RATE_WINDOW_SECONDS = 60
 const ALLOWED_SCOPES = new Set(['workspace', 'lead', 'contact', 'company', 'deal'])
 
+type EntitlementGate = {
+  allowed: boolean
+  reason: string
+  plan_code: string | null
+  subscription_status: string | null
+  entitlement_enabled: boolean
+  limit_value: number | null
+  used_value: number
+  remaining_value: number | null
+  period_start: string
+  period_end: string
+}
+
 function isAllowedOrigin(req: Request) {
   const origin = req.headers.get('origin')
   return !origin || origin === PROD_ORIGIN || LOCAL_ORIGINS.has(origin)
@@ -98,6 +111,23 @@ async function consumeRateLimit(admin: ReturnType<typeof createClient>, workspac
   return data[0] as { allowed: boolean; remaining: number; retry_after_seconds: number }
 }
 
+async function checkWorkspaceEntitlement(
+  admin: ReturnType<typeof createClient>,
+  workspaceId: string,
+  entitlementKey: string,
+) {
+  const { data, error } = await admin.rpc('check_workspace_entitlement', {
+    p_workspace_id: workspaceId,
+    p_entitlement_key: entitlementKey,
+  })
+
+  if (error || !data?.length) {
+    console.error('AI entitlement check failed', { code: error?.code })
+    return null
+  }
+  return data[0] as EntitlementGate
+}
+
 async function reserveIdempotencyKey(admin: ReturnType<typeof createClient>, key: string, userId: string) {
   const now = new Date()
   const nowIso = now.toISOString()
@@ -138,6 +168,23 @@ Deno.serve(async (req: Request) => {
   const workspaceResult = await resolveWorkspace(admin, user.id, req.headers.get('x-workspace-id'))
   if ('error' in workspaceResult) return json(req, workspaceResult.error === 'Workspace access denied' ? 403 : 409, { error: workspaceResult.error })
   const { workspace } = workspaceResult
+
+  const entitlement = await checkWorkspaceEntitlement(admin, workspace.id, 'ai_copilot')
+  if (!entitlement) return json(req, 503, { error: 'AI billing entitlement is temporarily unavailable' })
+  if (!entitlement.allowed) {
+    const status = entitlement.reason === 'quota_exhausted' ? 429 : 403
+    return json(req, status, {
+      error: entitlement.reason === 'quota_exhausted'
+        ? 'Monthly AI usage limit has been reached for this workspace'
+        : 'Workspace is not entitled to AI Copilot',
+      billing_reason: entitlement.reason,
+      plan_code: entitlement.plan_code,
+      subscription_status: entitlement.subscription_status,
+      limit: entitlement.limit_value,
+      used: entitlement.used_value,
+      remaining: entitlement.remaining_value,
+    })
+  }
 
   const rate = await consumeRateLimit(admin, workspace.id, user.id)
   if (!rate) return json(req, 503, { error: 'AI request protection is temporarily unavailable' })
