@@ -270,24 +270,47 @@ Deno.serve(async (req: Request) => {
     if (!request.stripe_subscription_schedule_id || request.stripe_subscription_id !== local.stripe_subscription_id) {
       return json(req, 409, { error: 'Scheduled change Stripe identity requires administrator review' })
     }
-    if (request.effective_at && new Date(request.effective_at).getTime() <= Date.now()) {
-      return json(req, 409, { error: 'The scheduled change is already taking effect. Refresh billing state before retrying.' })
-    }
 
     try {
       const stripeSubscription = await stripe.subscriptions.retrieve(local.stripe_subscription_id)
       if (stripeSubscription.livemode) throw new Error('live_subscription_rejected')
       if (objectId(stripeSubscription.customer) !== local.stripe_customer_id) throw new Error('stripe_customer_identity_mismatch')
-      const scheduleId = stripeScheduleId(stripeSubscription)
-      if (!scheduleId || scheduleId !== request.stripe_subscription_schedule_id) throw new Error('stripe_schedule_identity_mismatch')
 
-      const released = await stripe.subscriptionSchedules.release(
-        scheduleId,
-        { preserve_cancel_date: false },
-        { idempotencyKey: `schedule-release:${workspaceId}:${idempotencyKey}` },
-      )
-      if (released.livemode || released.status !== 'released') throw new Error('stripe_schedule_release_unverified')
-      if (objectId(released.released_subscription) !== local.stripe_subscription_id) throw new Error('stripe_schedule_released_subscription_mismatch')
+      const attachedScheduleId = stripeScheduleId(stripeSubscription)
+      let releasedSchedule: Stripe.SubscriptionSchedule
+
+      if (attachedScheduleId) {
+        if (attachedScheduleId !== request.stripe_subscription_schedule_id) {
+          throw new Error('stripe_schedule_identity_mismatch')
+        }
+        if (request.effective_at && new Date(request.effective_at).getTime() <= Date.now()) {
+          return json(req, 409, { error: 'The scheduled change is already taking effect. Refresh billing state before retrying.' })
+        }
+
+        releasedSchedule = await stripe.subscriptionSchedules.release(
+          attachedScheduleId,
+          { preserve_cancel_date: false },
+          { idempotencyKey: `schedule-release:${workspaceId}:${idempotencyKey}` },
+        )
+      } else {
+        // Recovery path: Stripe may already have released the known schedule while
+        // the local cancellation-finalization write failed. Re-read that exact
+        // schedule and treat a verified released state as an idempotent retry.
+        const knownSchedule = await stripe.subscriptionSchedules.retrieve(
+          request.stripe_subscription_schedule_id,
+        )
+        if (knownSchedule.livemode || knownSchedule.status !== 'released') {
+          throw new Error('stripe_schedule_release_state_unverified')
+        }
+        releasedSchedule = knownSchedule
+      }
+
+      if (releasedSchedule.livemode || releasedSchedule.status !== 'released') {
+        throw new Error('stripe_schedule_release_unverified')
+      }
+      if (objectId(releasedSchedule.released_subscription) !== local.stripe_subscription_id) {
+        throw new Error('stripe_schedule_released_subscription_mismatch')
+      }
 
       const finalizeError = await updateRequest(admin, request.request_id, { status: 'canceled', error_code: null })
       if (finalizeError) throw new Error('billing_change_request_cancel_finalize_failed')
@@ -349,9 +372,9 @@ Deno.serve(async (req: Request) => {
     if (existing.to_plan_id !== targetPlan.id || existing.to_billing_cycle !== targetCycle || existing.mode !== 'scheduled') {
       return json(req, 409, { error: 'This idempotency key was already used for a different billing change' })
     }
-    if (existing.status === 'scheduled') {
+    if (existing.status === 'scheduled' || existing.status === 'applied') {
       return json(req, 200, {
-        status: 'scheduled',
+        status: existing.status,
         plan_code: targetPlan.code,
         billing_cycle: targetCycle,
         effective_at: existing.effective_at,
@@ -470,16 +493,20 @@ Deno.serve(async (req: Request) => {
     }
 
     const effectiveAt = new Date(period.end * 1000).toISOString()
-    const finalizeError = await updateRequest(admin, requestId, {
-      status: 'scheduled',
-      stripe_subscription_schedule_id: scheduled.id,
-      effective_at: effectiveAt,
-      error_code: null,
+    const finalize = await admin.rpc('finalize_scheduled_billing_change_request', {
+      p_request_id: requestId,
+      p_stripe_subscription_schedule_id: scheduled.id,
+      p_effective_at: effectiveAt,
     })
-    if (finalizeError) throw new Error('billing_change_request_schedule_finalize_failed')
+    if (finalize.error) throw new Error(`billing_change_request_schedule_finalize_failed:${finalize.error.code || 'unknown'}`)
 
-    return json(req, 202, {
-      status: 'scheduled',
+    const finalStatus = String(finalize.data)
+    if (finalStatus !== 'scheduled' && finalStatus !== 'applied') {
+      throw new Error('billing_change_request_schedule_finalize_unverified')
+    }
+
+    return json(req, finalStatus === 'applied' ? 200 : 202, {
+      status: finalStatus,
       plan_code: targetPlan.code,
       billing_cycle: targetCycle,
       effective_at: effectiveAt,
