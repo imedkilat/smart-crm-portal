@@ -115,6 +115,20 @@ function subscriptionPeriod(subscription: Stripe.Subscription) {
   }
 }
 
+function subscriptionCancelsAtPeriodEnd(subscription: Stripe.Subscription) {
+  const item = subscriptionItem(subscription) as unknown as Record<string, unknown>
+  const rawSubscription = subscription as unknown as Record<string, unknown>
+  const cancelAt = rawSubscription.cancel_at
+  const periodEnd = item.current_period_end ?? rawSubscription.current_period_end
+
+  if (subscription.cancel_at_period_end === true) return true
+  return typeof cancelAt === 'number'
+    && Number.isFinite(cancelAt)
+    && typeof periodEnd === 'number'
+    && Number.isFinite(periodEnd)
+    && cancelAt === periodEnd
+}
+
 async function findWorkspaceByStripeIdentity(
   admin: AdminClient,
   customerId: string,
@@ -313,7 +327,7 @@ async function syncStripeSubscription(
     trial_ends_at: unixToIso(rawSubscription.trial_end),
     current_period_start: period.start,
     current_period_end: period.end,
-    cancel_at_period_end: subscription.cancel_at_period_end === true,
+    cancel_at_period_end: subscriptionCancelsAtPeriodEnd(subscription),
     canceled_at: unixToIso(rawSubscription.canceled_at),
   }
 
