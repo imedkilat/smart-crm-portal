@@ -94,11 +94,25 @@ function mapSubscriptionStatus(status: string) {
   return 'incomplete'
 }
 
-function subscriptionPrice(subscription: Stripe.Subscription) {
+function subscriptionItem(subscription: Stripe.Subscription) {
   const items = subscription.items?.data || []
   if (items.length !== 1) throw new Error('stripe_subscription_item_count_invalid')
   if (items[0].quantity !== 1) throw new Error('stripe_subscription_quantity_invalid')
-  return items[0].price
+  return items[0]
+}
+
+function subscriptionPrice(subscription: Stripe.Subscription) {
+  return subscriptionItem(subscription).price
+}
+
+function subscriptionPeriod(subscription: Stripe.Subscription) {
+  const item = subscriptionItem(subscription) as unknown as Record<string, unknown>
+  const rawSubscription = subscription as unknown as Record<string, unknown>
+
+  return {
+    start: unixToIso(item.current_period_start ?? rawSubscription.current_period_start),
+    end: unixToIso(item.current_period_end ?? rawSubscription.current_period_end),
+  }
 }
 
 async function findWorkspaceByStripeIdentity(
@@ -288,6 +302,7 @@ async function syncStripeSubscription(
   }
 
   const status = mapSubscriptionStatus(subscription.status)
+  const period = subscriptionPeriod(subscription)
   const update = {
     plan_id: mapping.plan.id,
     status,
@@ -296,8 +311,8 @@ async function syncStripeSubscription(
     stripe_customer_id: customerId,
     stripe_subscription_id: subscriptionId,
     trial_ends_at: unixToIso(rawSubscription.trial_end),
-    current_period_start: unixToIso(rawSubscription.current_period_start),
-    current_period_end: unixToIso(rawSubscription.current_period_end),
+    current_period_start: period.start,
+    current_period_end: period.end,
     cancel_at_period_end: subscription.cancel_at_period_end === true,
     canceled_at: unixToIso(rawSubscription.canceled_at),
   }
