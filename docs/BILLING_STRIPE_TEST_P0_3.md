@@ -40,7 +40,7 @@ Current subscription provider distribution is expected to remain:
 - manually provisioned paid workspace(s) → `billing_provider=manual`;
 - Stripe-managed workspaces → none until controlled test-mode Checkout is explicitly enabled.
 
-Current Stripe plan mapping is intentionally empty. Checkout fails closed until the selected active public plan contains a server-trusted Stripe test Price ID.
+Current Stripe plan mapping is intentionally empty. Checkout fails closed until the selected active public plan contains server-trusted Stripe test Product and Price IDs.
 
 ## Test-only safety boundary
 
@@ -65,11 +65,23 @@ Requirements:
 2. caller must be `owner` or `admin` of the requested workspace;
 3. requested plan must be an active, public `starter` or `pro` plan;
 4. requested billing cycle must be `monthly` or `annual`;
-5. Stripe Price ID is loaded from `public.plans.stripe_price_id_monthly` / `stripe_price_id_annual`;
-6. client-supplied Price IDs are never accepted;
+5. Stripe Product/Price IDs are loaded from trusted `public.plans` fields;
+6. client-supplied Stripe Product/Price IDs are never accepted;
 7. manually billed subscriptions cannot be silently converted;
 8. an existing Stripe billing relationship cannot create a second Checkout path;
-9. an `x-idempotency-key` is required and forwarded to Stripe as a workspace-scoped idempotency key.
+9. the pre-Checkout local subscription must still be the unbilled `billing_provider=none` / `billing_cycle=none` baseline;
+10. an `x-idempotency-key` is required and forwarded to Stripe as a workspace-scoped idempotency key.
+
+Before creating a Checkout Session, the server retrieves the configured Stripe Price and validates it against the local sellable plan. It fails closed unless:
+
+- the Price is active;
+- the Price belongs to the mapped Stripe Product;
+- local and Stripe currency are both the supported USD billing currency;
+- Stripe `unit_amount` exactly matches the local monthly/annual plan amount;
+- the recurring interval is exactly one month or one year for the selected cycle;
+- recurring usage type is `licensed`.
+
+This prevents a stale or accidentally mis-mapped `price_...` ID from silently creating a Checkout for the wrong test Product, amount, currency, or billing interval.
 
 Checkout does **not** mutate the local subscription before payment. The workspace stays on its existing local entitlement until a signed Stripe webhook confirms the Stripe subscription. This prevents an abandoned Checkout Session from downgrading or corrupting the current workspace state.
 
@@ -80,7 +92,7 @@ Checkout metadata carries only trusted routing identifiers:
 - `billing_cycle`;
 - `requested_by`.
 
-The same metadata is attached to `subscription_data` so later subscription events can be tenant-resolved without trusting browser state.
+The same metadata is attached to `subscription_data` so initial subscription events can be tenant-resolved without trusting browser state.
 
 Success/cancel URLs are server-controlled Smart CRM URLs rather than arbitrary client return URLs.
 
@@ -130,15 +142,19 @@ P0-3 handles:
 
 The webhook resolves the authoritative plan from the Stripe subscription Price ID against the server-stored plan mapping. It does not trust event metadata alone to choose the plan.
 
-Only Starter/Pro Price mappings are accepted by the self-service Stripe path.
+Only Starter/Pro Price mappings are accepted by the self-service Stripe path. The subscription's actual Stripe Price is also checked against the mapped Product, USD amount, recurring interval/count, and licensed usage type before local billing state is updated. Unlike Checkout creation, webhook lifecycle sync does not require the Price to remain active because an existing subscription may legitimately reference a later-archived Price during cancellation or recovery processing.
 
 Before updating a workspace subscription, the webhook:
 
-- resolves the workspace from trusted subscription metadata or an existing Stripe identity;
+- resolves the workspace from trusted initial subscription metadata or an existing Stripe identity;
 - rejects cross-workspace reuse of a Stripe Customer or Subscription ID;
-- rejects metadata that conflicts with the server-side Price mapping;
 - refuses to overwrite `billing_provider=manual` without a future explicit conversion flow;
-- verifies an existing Stripe identity still matches the same workspace.
+- verifies an existing Stripe identity still matches the same workspace;
+- validates Checkout plan/cycle metadata against the server Price mapping only on the initial `billing_provider=none` → Stripe transition.
+
+Once `billing_provider=stripe`, the current Stripe subscription Price becomes plan/cycle authority. This deliberately avoids treating the original Checkout metadata as permanent plan state, so a future legitimate Customer Portal upgrade/downgrade is not rejected merely because the original metadata is stale.
+
+For `customer.subscription.created` and `customer.subscription.updated`, the handler re-fetches the current subscription from Stripe before syncing. This reduces the risk that a delayed older event rolls the local mirror backward. The deletion event uses its terminal event object so cancellation sync does not depend on post-deletion retrieval behavior.
 
 Stripe status is normalized into the existing local status vocabulary. `unpaid` becomes `past_due`; `incomplete_expired` becomes `canceled`.
 
@@ -158,12 +174,12 @@ PR CI runs:
 ```text
 node --check scripts/verify-stripe-test-foundation.mjs
 node scripts/verify-stripe-test-foundation.mjs
-deno check supabase/functions/crm-billing-checkout/index.ts
-deno check supabase/functions/crm-billing-portal/index.ts
-deno check supabase/functions/stripe-billing-webhook/index.ts
+deno check --node-modules-dir=auto supabase/functions/crm-billing-checkout/index.ts
+deno check --node-modules-dir=auto supabase/functions/crm-billing-portal/index.ts
+deno check --node-modules-dir=auto supabase/functions/stripe-billing-webhook/index.ts
 ```
 
-The static safety contract verifies test-key guards, server-trusted Price lookup, owner/admin billing authorization, webhook raw-body signature verification, replay handling, minimized event payloads, and explicit function JWT settings.
+The static safety contract verifies test-key guards, server-trusted Product/Price lookup, exact amount/currency/interval validation, owner/admin billing authorization, webhook raw-body signature verification, replay handling, minimized event payloads, lifecycle tenant guards, and explicit function JWT settings.
 
 ## Controlled test-mode rollout order
 
@@ -171,7 +187,7 @@ Do not perform these steps merely because this source PR is merged.
 
 1. Reconfirm production migration/provider baseline.
 2. In a Stripe **test/sandbox** environment, create or identify the intended Starter/Pro Products and monthly/annual Prices.
-3. Verify Price amount, currency, recurring interval, and Product ownership in Stripe before saving any IDs.
+3. Verify Product identity, Price amount, USD currency, recurring interval/count, and licensed usage type in Stripe before saving any IDs.
 4. Populate only the matching test Product/Price IDs in `public.plans` through an approval-gated server/admin operation.
 5. Configure `STRIPE_BILLING_MODE=test`, the test secret key, and the webhook signing secret as Supabase secrets. Never expose them to the browser or repository.
 6. Deploy `crm-billing-checkout` and `crm-billing-portal` with JWT verification enabled.
@@ -182,7 +198,7 @@ Do not perform these steps merely because this source PR is merged.
 11. Complete payment with a Stripe test payment method.
 12. Confirm signed webhook sync transitions only the QA workspace to `billing_provider=stripe` and the expected Starter/Pro plan.
 13. Replay the same event and confirm no duplicate state mutation.
-14. Exercise subscription update/cancel/payment-failure scenarios, preferably with Stripe test clocks where appropriate.
+14. Exercise subscription update/cancel/payment-failure scenarios, including delayed-event ordering where practical and Stripe test clocks where appropriate.
 15. Confirm Customer Portal can only be opened by an owner/admin of the Stripe-managed QA workspace.
 16. Re-run entitlement/quota, tenant-isolation, and billing provider regression checks.
 17. Keep live Stripe mode disabled.
@@ -196,7 +212,7 @@ P0-3 source completion is not commercial billing launch approval. Remaining gate
 - explicit seat-limit enforcement for `max_seats`;
 - safe handling of plan upgrades/downgrades and proration policy;
 - explicit migration policy for manually billed customers;
-- durable reconciliation/recovery for missed or out-of-order Stripe events;
+- durable reconciliation/recovery for missed or out-of-order Stripe events beyond event-time re-fetch protection;
 - final security/advisor review;
 - a separate live-mode cutover PR and explicit owner approval.
 
