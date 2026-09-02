@@ -47,6 +47,10 @@ function validUuid(value: unknown): value is string {
     && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 }
 
+function validBillingRequestId(value: unknown): value is string {
+  return typeof value === 'string' && /^brq_[a-f0-9]{32}$/.test(value)
+}
+
 function loadStripeTestConfig() {
   const mode = Deno.env.get('STRIPE_BILLING_MODE') || ''
   const secretKey = Deno.env.get('STRIPE_SECRET_KEY') || ''
@@ -91,7 +95,10 @@ function mapSubscriptionStatus(status: string) {
 }
 
 function subscriptionPrice(subscription: Stripe.Subscription) {
-  return subscription.items?.data?.[0]?.price || null
+  const items = subscription.items?.data || []
+  if (items.length !== 1) throw new Error('stripe_subscription_item_count_invalid')
+  if (items[0].quantity !== 1) throw new Error('stripe_subscription_quantity_invalid')
+  return items[0].price
 }
 
 async function findWorkspaceByStripeIdentity(
@@ -204,6 +211,37 @@ async function loadCurrentSubscription(admin: AdminClient, workspaceId: string) 
   return data as SubscriptionState
 }
 
+async function assertTrustedInitialCheckout(
+  admin: AdminClient,
+  workspaceId: string,
+  metadata: Record<string, string>,
+  mapping: { plan: PlanRow; billingCycle: 'monthly' | 'annual' },
+) {
+  if (!validBillingRequestId(metadata.billing_request_id)) {
+    throw new Error('stripe_checkout_request_id_missing')
+  }
+  if (!validUuid(metadata.requested_by)) throw new Error('stripe_checkout_requester_missing')
+  if (metadata.plan_code !== mapping.plan.code) throw new Error('stripe_subscription_plan_metadata_mismatch')
+  if (metadata.billing_cycle !== mapping.billingCycle) throw new Error('stripe_subscription_cycle_metadata_mismatch')
+
+  const { data: requests, error } = await admin
+    .from('billing_events')
+    .select('payload')
+    .eq('workspace_id', workspaceId)
+    .eq('event_type', 'stripe_checkout.request_created')
+    .eq('billing_provider', 'none')
+    .contains('payload', { billing_request_id: metadata.billing_request_id })
+    .order('created_at', { ascending: false })
+    .limit(1)
+
+  if (error) throw new Error(`stripe_checkout_request_lookup_failed:${error.code || 'unknown'}`)
+  const requestPayload = metadataObject(requests?.[0]?.payload)
+  if (!requestPayload.billing_request_id) throw new Error('stripe_checkout_request_not_authorized')
+  if (requestPayload.plan_code !== metadata.plan_code) throw new Error('stripe_checkout_request_plan_mismatch')
+  if (requestPayload.billing_cycle !== metadata.billing_cycle) throw new Error('stripe_checkout_request_cycle_mismatch')
+  if (requestPayload.requested_by !== metadata.requested_by) throw new Error('stripe_checkout_requester_mismatch')
+}
+
 async function syncStripeSubscription(
   admin: AdminClient,
   subscription: Stripe.Subscription,
@@ -222,7 +260,6 @@ async function syncStripeSubscription(
   await assertStripeIdentityNotCrossTenant(admin, workspaceId, customerId, subscriptionId)
 
   const price = subscriptionPrice(subscription)
-  if (!price) throw new Error('stripe_subscription_price_missing')
   const mapping = await resolvePlanFromPrice(admin, price)
 
   const current = await loadCurrentSubscription(admin, workspaceId)
@@ -230,19 +267,17 @@ async function syncStripeSubscription(
     throw new Error('manual_subscription_requires_explicit_conversion')
   }
 
+  // The first none -> Stripe transition must prove that Smart CRM created and
+  // audited the authorized Checkout request. Stripe-side metadata alone is not
+  // enough to grant a workspace paid entitlement.
+  if (current.billing_provider === 'none') {
+    await assertTrustedInitialCheckout(admin, workspaceId, metadata, mapping)
+  }
+
   // Checkout metadata is an initial tenant-routing assertion, not permanent
   // plan authority. Once Stripe owns the subscription, the current Stripe
   // Price is authoritative so legitimate Portal upgrades/downgrades are not
   // blocked by stale metadata from the original Checkout Session.
-  if (current.billing_provider === 'none') {
-    if (metadata.plan_code && metadata.plan_code !== mapping.plan.code) {
-      throw new Error('stripe_subscription_plan_metadata_mismatch')
-    }
-    if (metadata.billing_cycle && metadata.billing_cycle !== mapping.billingCycle) {
-      throw new Error('stripe_subscription_cycle_metadata_mismatch')
-    }
-  }
-
   if (current.billing_provider === 'stripe') {
     if (current.stripe_customer_id && current.stripe_customer_id !== customerId) {
       throw new Error('stripe_customer_identity_mismatch')
