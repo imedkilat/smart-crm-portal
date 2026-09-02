@@ -4,13 +4,11 @@ import Stripe from 'npm:stripe@22.6.0'
 const PROD_ORIGIN = 'https://smart-crm-portal.vercel.app'
 const LOCAL_ORIGINS = new Set(['http://localhost:5173', 'http://127.0.0.1:5173'])
 const MAX_BODY_BYTES = 8 * 1024
+const PROCESSING_TIMEOUT_MS = 5 * 60 * 1000
 const ALLOWED_CYCLES = new Set(['monthly', 'annual'])
 const ALLOWED_PLAN_CODES = new Set(['starter', 'pro'])
-const PROCESSING_TIMEOUT_MS = 5 * 60 * 1000
 
 type BillingCycle = 'monthly' | 'annual'
-type BillingAction = 'schedule' | 'cancel'
-
 type PlanRow = {
   id: string
   code: string
@@ -37,11 +35,6 @@ type SubscriptionRow = {
   canceled_at: string | null
 }
 
-function isAllowedOrigin(req: Request) {
-  const origin = req.headers.get('origin')
-  return !origin || origin === PROD_ORIGIN || LOCAL_ORIGINS.has(origin)
-}
-
 function corsHeaders(req: Request) {
   const origin = req.headers.get('origin') || PROD_ORIGIN
   const allowedOrigin = origin === PROD_ORIGIN || LOCAL_ORIGINS.has(origin) ? origin : PROD_ORIGIN
@@ -58,6 +51,11 @@ function json(req: Request, status: number, payload: Record<string, unknown>) {
     status,
     headers: { ...corsHeaders(req), 'Content-Type': 'application/json' },
   })
+}
+
+function allowedOrigin(req: Request) {
+  const origin = req.headers.get('origin')
+  return !origin || origin === PROD_ORIGIN || LOCAL_ORIGINS.has(origin)
 }
 
 function stringValue(value: unknown) {
@@ -80,27 +78,23 @@ function objectId(value: unknown) {
   return null
 }
 
-function unixToIso(value: number) {
-  return new Date(value * 1000).toISOString()
-}
-
-async function stableChangeRequestId(workspaceId: string, userId: string, idempotencyKey: string) {
-  const bytes = new TextEncoder().encode(`${workspaceId}:${userId}:${idempotencyKey}`)
-  const digest = await crypto.subtle.digest('SHA-256', bytes)
-  const hex = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
-  return `bchg_${hex.slice(0, 32)}`
-}
-
 function loadStripeTestConfig() {
   const mode = Deno.env.get('STRIPE_BILLING_MODE') || ''
   const secretKey = Deno.env.get('STRIPE_SECRET_KEY') || ''
-
   if (mode !== 'test') return { error: 'Stripe billing changes are not enabled in test mode' as const }
   if (!secretKey.startsWith('sk_test_') && !secretKey.startsWith('rk_test_')) {
     return { error: 'Stripe test credentials are not configured' as const }
   }
-
   return { secretKey }
+}
+
+async function stableChangeRequestId(workspaceId: string, userId: string, idempotencyKey: string) {
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(`${workspaceId}:${userId}:${idempotencyKey}`),
+  )
+  const hex = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
+  return `bchg_${hex.slice(0, 32)}`
 }
 
 function priceIdFor(plan: PlanRow, cycle: BillingCycle) {
@@ -111,54 +105,47 @@ function validateStripePrice(price: Stripe.Price, plan: PlanRow, cycle: BillingC
   if (!price.active) return 'stripe_price_inactive'
   if (!plan.stripe_product_id?.startsWith('prod_')) return 'stripe_product_mapping_missing'
   if (objectId(price.product) !== plan.stripe_product_id) return 'stripe_product_mapping_mismatch'
+  if (plan.currency_code.trim().toUpperCase() !== 'USD') return 'unsupported_billing_currency'
+  if (price.currency.toUpperCase() !== 'USD') return 'stripe_price_currency_mismatch'
 
-  const currency = plan.currency_code.trim().toUpperCase()
-  if (currency !== 'USD') return 'unsupported_billing_currency'
-  if (price.currency.toUpperCase() !== currency) return 'stripe_price_currency_mismatch'
+  const configuredAmount = Number(cycle === 'annual' ? plan.price_annual : plan.price_monthly)
+  if (!Number.isFinite(configuredAmount) || configuredAmount < 0) return 'local_plan_amount_invalid'
+  if (price.unit_amount !== Math.round(configuredAmount * 100)) return 'stripe_price_amount_mismatch'
 
-  const configuredMajorAmount = Number(cycle === 'annual' ? plan.price_annual : plan.price_monthly)
-  if (!Number.isFinite(configuredMajorAmount) || configuredMajorAmount < 0) return 'local_plan_amount_invalid'
-  if (price.unit_amount !== Math.round(configuredMajorAmount * 100)) return 'stripe_price_amount_mismatch'
-
-  const expectedInterval = cycle === 'annual' ? 'year' : 'month'
-  if (!price.recurring || price.recurring.interval !== expectedInterval) return 'stripe_price_interval_mismatch'
+  const interval = cycle === 'annual' ? 'year' : 'month'
+  if (!price.recurring || price.recurring.interval !== interval) return 'stripe_price_interval_mismatch'
   if (price.recurring.interval_count !== 1) return 'stripe_price_interval_count_mismatch'
   if (price.recurring.usage_type !== 'licensed') return 'stripe_price_usage_type_mismatch'
-
   return null
 }
 
 function singleSubscriptionItem(subscription: Stripe.Subscription) {
   const items = subscription.items?.data || []
-  if (items.length !== 1) return null
-  if (items[0].quantity !== 1) return null
+  if (items.length !== 1 || items[0].quantity !== 1) return null
   return items[0]
 }
 
-function currentPeriodEnd(subscription: Stripe.Subscription) {
+function subscriptionPeriod(subscription: Stripe.Subscription) {
   const item = singleSubscriptionItem(subscription) as unknown as Record<string, unknown> | null
   const raw = subscription as unknown as Record<string, unknown>
-  const value = item?.current_period_end ?? raw.current_period_end
-  return typeof value === 'number' && Number.isFinite(value) ? value : null
-}
-
-function currentPeriodStart(subscription: Stripe.Subscription) {
-  const item = singleSubscriptionItem(subscription) as unknown as Record<string, unknown> | null
-  const raw = subscription as unknown as Record<string, unknown>
-  const value = item?.current_period_start ?? raw.current_period_start
-  return typeof value === 'number' && Number.isFinite(value) ? value : null
+  const start = item?.current_period_start ?? raw.current_period_start
+  const end = item?.current_period_end ?? raw.current_period_end
+  return {
+    start: typeof start === 'number' && Number.isFinite(start) ? start : null,
+    end: typeof end === 'number' && Number.isFinite(end) ? end : null,
+  }
 }
 
 function stripeCancelAt(subscription: Stripe.Subscription) {
-  const raw = subscription as unknown as Record<string, unknown>
-  return typeof raw.cancel_at === 'number' ? raw.cancel_at : null
+  const value = (subscription as unknown as Record<string, unknown>).cancel_at
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
 function stripeScheduleId(subscription: Stripe.Subscription) {
   return objectId((subscription as unknown as Record<string, unknown>).schedule)
 }
 
-function hasUnsupportedBillingShape(subscription: Stripe.Subscription) {
+function unsupportedBillingShape(subscription: Stripe.Subscription) {
   const item = singleSubscriptionItem(subscription)
   if (!item) return 'stripe_subscription_item_shape_invalid'
   if (subscription.collection_method !== 'charge_automatically') return 'unsupported_collection_method'
@@ -172,18 +159,17 @@ function hasUnsupportedBillingShape(subscription: Stripe.Subscription) {
   return null
 }
 
-function schedulePhasePriceId(phase: Stripe.SubscriptionSchedule.Phase) {
+function phasePriceId(phase: Stripe.SubscriptionSchedule.Phase) {
   const items = phase.items || []
   if (items.length !== 1 || items[0].quantity !== 1) return null
   return objectId(items[0].price || items[0].plan)
 }
 
-function schedulePhaseMetadata(phase: Stripe.SubscriptionSchedule.Phase) {
-  const value = phase.metadata
-  if (!value || typeof value !== 'object') return {} as Record<string, string>
+function phaseMetadata(phase: Stripe.SubscriptionSchedule.Phase) {
   const result: Record<string, string> = {}
-  for (const [key, item] of Object.entries(value)) {
-    if (typeof item === 'string') result[key] = item
+  if (!phase.metadata || typeof phase.metadata !== 'object') return result
+  for (const [key, value] of Object.entries(phase.metadata)) {
+    if (typeof value === 'string') result[key] = value
   }
   return result
 }
@@ -203,11 +189,10 @@ async function updateRequest(
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders(req) })
   if (req.method !== 'POST') return json(req, 405, { error: 'Method not allowed' })
-  if (!isAllowedOrigin(req)) return json(req, 403, { error: 'Origin not allowed' })
+  if (!allowedOrigin(req)) return json(req, 403, { error: 'Origin not allowed' })
 
   const authHeader = req.headers.get('Authorization')
   if (!authHeader?.startsWith('Bearer ')) return json(req, 401, { error: 'Authentication required' })
-
   const idempotencyKey = validIdempotencyKey(req.headers.get('x-idempotency-key'))
   if (!idempotencyKey) return json(req, 422, { error: 'A valid x-idempotency-key is required' })
 
@@ -224,7 +209,6 @@ Deno.serve(async (req: Request) => {
   const admin = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   })
-
   const token = authHeader.slice('Bearer '.length)
   const { data: { user }, error: userError } = await admin.auth.getUser(token)
   if (userError || !user) return json(req, 401, { error: 'Invalid or expired session' })
@@ -241,12 +225,9 @@ Deno.serve(async (req: Request) => {
   }
 
   const workspaceId = stringValue(payload.workspace_id)
-  const actionValue = stringValue(payload.action).toLowerCase() || 'schedule'
+  const action = stringValue(payload.action).toLowerCase() || 'schedule'
   if (!validUuid(workspaceId)) return json(req, 422, { error: 'Select a valid workspace' })
-  if (actionValue !== 'schedule' && actionValue !== 'cancel') {
-    return json(req, 422, { error: 'Select a valid billing change action' })
-  }
-  const action = actionValue as BillingAction
+  if (!['schedule', 'cancel'].includes(action)) return json(req, 422, { error: 'Select a valid billing change action' })
 
   const { data: membership, error: membershipError } = await admin
     .from('workspace_members')
@@ -254,7 +235,6 @@ Deno.serve(async (req: Request) => {
     .eq('workspace_id', workspaceId)
     .eq('user_id', user.id)
     .maybeSingle()
-
   if (membershipError) return json(req, 503, { error: 'Workspace authorization is temporarily unavailable' })
   if (!membership || !['owner', 'admin'].includes(String(membership.role))) {
     return json(req, 403, { error: 'Workspace owner or administrator access required' })
@@ -265,132 +245,81 @@ Deno.serve(async (req: Request) => {
     .select('workspace_id, plan_id, status, billing_cycle, billing_provider, stripe_customer_id, stripe_subscription_id, cancel_at_period_end, canceled_at')
     .eq('workspace_id', workspaceId)
     .maybeSingle()
-
   if (subscriptionError) return json(req, 503, { error: 'Subscription state is temporarily unavailable' })
   if (!subscriptionData) return json(req, 409, { error: 'Workspace subscription baseline is missing' })
 
-  const localSubscription = subscriptionData as SubscriptionRow
-  if (localSubscription.billing_provider !== 'stripe') {
-    return json(req, 409, { error: 'Self-service plan changes require an existing Stripe-managed subscription' })
-  }
-  if (localSubscription.status !== 'active') {
-    return json(req, 409, { error: 'Plan changes require an active Stripe subscription' })
-  }
-  if (localSubscription.cancel_at_period_end || localSubscription.canceled_at) {
-    return json(req, 409, { error: 'Undo the scheduled cancellation before changing plans' })
-  }
-  if (!localSubscription.stripe_customer_id || !localSubscription.stripe_subscription_id) {
-    return json(req, 409, { error: 'Stripe subscription identity requires administrator review' })
-  }
-  if (!ALLOWED_CYCLES.has(localSubscription.billing_cycle)) {
-    return json(req, 409, { error: 'Current billing cycle requires administrator review' })
-  }
+  const local = subscriptionData as SubscriptionRow
+  if (local.billing_provider !== 'stripe') return json(req, 409, { error: 'Self-service plan changes require an existing Stripe-managed subscription' })
+  if (local.status !== 'active') return json(req, 409, { error: 'Plan changes require an active Stripe subscription' })
+  if (local.cancel_at_period_end || local.canceled_at) return json(req, 409, { error: 'Undo the scheduled cancellation before changing plans' })
+  if (!local.stripe_customer_id || !local.stripe_subscription_id) return json(req, 409, { error: 'Stripe subscription identity requires administrator review' })
+  if (!ALLOWED_CYCLES.has(local.billing_cycle)) return json(req, 409, { error: 'Current billing cycle requires administrator review' })
 
   const stripe = new Stripe(stripeConfig.secretKey)
 
   if (action === 'cancel') {
-    const { data: scheduledRequest, error: scheduledRequestError } = await admin
+    const { data: request, error: requestError } = await admin
       .from('billing_change_requests')
-      .select('request_id, from_plan_id, from_billing_cycle, stripe_subscription_id, stripe_subscription_schedule_id, effective_at')
+      .select('request_id, stripe_subscription_id, stripe_subscription_schedule_id, effective_at')
       .eq('workspace_id', workspaceId)
       .eq('mode', 'scheduled')
       .eq('status', 'scheduled')
       .maybeSingle()
-
-    if (scheduledRequestError) return json(req, 503, { error: 'Scheduled billing change lookup is temporarily unavailable' })
-    if (!scheduledRequest) {
-      return json(req, 200, { status: 'no_scheduled_change', mode: 'test' })
-    }
-
-    if (!scheduledRequest.stripe_subscription_schedule_id) {
-      return json(req, 409, { error: 'Scheduled change requires administrator reconciliation before it can be canceled' })
-    }
-    if (scheduledRequest.stripe_subscription_id !== localSubscription.stripe_subscription_id) {
+    if (requestError) return json(req, 503, { error: 'Scheduled billing change lookup is temporarily unavailable' })
+    if (!request) return json(req, 200, { status: 'no_scheduled_change', mode: 'test' })
+    if (!request.stripe_subscription_schedule_id || request.stripe_subscription_id !== local.stripe_subscription_id) {
       return json(req, 409, { error: 'Scheduled change Stripe identity requires administrator review' })
     }
-    if (scheduledRequest.effective_at && new Date(scheduledRequest.effective_at).getTime() <= Date.now()) {
+    if (request.effective_at && new Date(request.effective_at).getTime() <= Date.now()) {
       return json(req, 409, { error: 'The scheduled change is already taking effect. Refresh billing state before retrying.' })
     }
 
     try {
-      const stripeSubscription = await stripe.subscriptions.retrieve(localSubscription.stripe_subscription_id)
+      const stripeSubscription = await stripe.subscriptions.retrieve(local.stripe_subscription_id)
       if (stripeSubscription.livemode) throw new Error('live_subscription_rejected')
-      if (objectId(stripeSubscription.customer) !== localSubscription.stripe_customer_id) {
-        throw new Error('stripe_customer_identity_mismatch')
-      }
-      if (stripeSubscription.status !== 'active') throw new Error('stripe_subscription_not_active')
+      if (objectId(stripeSubscription.customer) !== local.stripe_customer_id) throw new Error('stripe_customer_identity_mismatch')
       const scheduleId = stripeScheduleId(stripeSubscription)
-      if (scheduleId !== scheduledRequest.stripe_subscription_schedule_id) {
-        throw new Error('stripe_schedule_identity_mismatch')
-      }
+      if (!scheduleId || scheduleId !== request.stripe_subscription_schedule_id) throw new Error('stripe_schedule_identity_mismatch')
 
       const released = await stripe.subscriptionSchedules.release(
         scheduleId,
         { preserve_cancel_date: false },
         { idempotencyKey: `schedule-release:${workspaceId}:${idempotencyKey}` },
       )
+      if (released.livemode || released.status !== 'released') throw new Error('stripe_schedule_release_unverified')
+      if (objectId(released.released_subscription) !== local.stripe_subscription_id) throw new Error('stripe_schedule_released_subscription_mismatch')
 
-      if (released.livemode || released.status !== 'released') {
-        throw new Error('stripe_schedule_release_unverified')
-      }
-      if (objectId(released.released_subscription) !== localSubscription.stripe_subscription_id) {
-        throw new Error('stripe_schedule_released_subscription_mismatch')
-      }
-
-      const updateError = await updateRequest(admin, scheduledRequest.request_id, {
-        status: 'canceled',
-        error_code: null,
-      })
-      if (updateError) throw new Error('billing_change_request_cancel_finalize_failed')
-
-      return json(req, 200, {
-        status: 'canceled',
-        request_id: scheduledRequest.request_id,
-        mode: 'test',
-      })
+      const finalizeError = await updateRequest(admin, request.request_id, { status: 'canceled', error_code: null })
+      if (finalizeError) throw new Error('billing_change_request_cancel_finalize_failed')
+      return json(req, 200, { status: 'canceled', request_id: request.request_id, mode: 'test' })
     } catch (error) {
-      const reason = error instanceof Error ? error.message.slice(0, 120) : 'stripe_schedule_release_failed'
-      console.error('Stripe scheduled change cancellation failed', { reason })
-      return json(req, 502, {
-        error: 'The scheduled Stripe test change could not be canceled safely. Refresh billing state before retrying.',
+      console.error('Stripe scheduled change cancellation failed', {
+        reason: error instanceof Error ? error.message.slice(0, 120) : 'unknown',
       })
+      return json(req, 502, { error: 'The scheduled Stripe test change could not be canceled safely. Refresh billing state before retrying.' })
     }
   }
 
   const targetPlanCode = stringValue(payload.plan_code).toLowerCase()
-  const requestedCycle = stringValue(payload.billing_cycle).toLowerCase()
+  const targetCycleValue = stringValue(payload.billing_cycle).toLowerCase()
   if (!ALLOWED_PLAN_CODES.has(targetPlanCode)) return json(req, 422, { error: 'Select Starter or Pro' })
-  if (!ALLOWED_CYCLES.has(requestedCycle)) return json(req, 422, { error: 'Select monthly or annual billing' })
-  const currentCycle = localSubscription.billing_cycle as BillingCycle
-  const targetCycle = requestedCycle as BillingCycle
+  if (!ALLOWED_CYCLES.has(targetCycleValue)) return json(req, 422, { error: 'Select monthly or annual billing' })
 
-  const { data: currentPlanData, error: currentPlanError } = await admin
-    .from('plans')
-    .select('id, code, is_active, is_public, currency_code, price_monthly, price_annual, max_seats, stripe_product_id, stripe_price_id_monthly, stripe_price_id_annual')
-    .eq('id', localSubscription.plan_id)
-    .maybeSingle()
+  const currentCycle = local.billing_cycle as BillingCycle
+  const targetCycle = targetCycleValue as BillingCycle
 
-  if (currentPlanError) return json(req, 503, { error: 'Current plan lookup is temporarily unavailable' })
-  if (!currentPlanData || !ALLOWED_PLAN_CODES.has(String(currentPlanData.code))) {
-    return json(req, 409, { error: 'Current plan is not eligible for self-service scheduling' })
-  }
-
-  const { data: targetPlanData, error: targetPlanError } = await admin
-    .from('plans')
-    .select('id, code, is_active, is_public, currency_code, price_monthly, price_annual, max_seats, stripe_product_id, stripe_price_id_monthly, stripe_price_id_annual')
-    .eq('code', targetPlanCode)
-    .eq('is_active', true)
-    .eq('is_public', true)
-    .maybeSingle()
-
-  if (targetPlanError) return json(req, 503, { error: 'Target plan lookup is temporarily unavailable' })
+  const planColumns = 'id, code, is_active, is_public, currency_code, price_monthly, price_annual, max_seats, stripe_product_id, stripe_price_id_monthly, stripe_price_id_annual'
+  const [{ data: currentPlanData, error: currentPlanError }, { data: targetPlanData, error: targetPlanError }] = await Promise.all([
+    admin.from('plans').select(planColumns).eq('id', local.plan_id).maybeSingle(),
+    admin.from('plans').select(planColumns).eq('code', targetPlanCode).eq('is_active', true).eq('is_public', true).maybeSingle(),
+  ])
+  if (currentPlanError || targetPlanError) return json(req, 503, { error: 'Billing plan lookup is temporarily unavailable' })
+  if (!currentPlanData || !ALLOWED_PLAN_CODES.has(String(currentPlanData.code))) return json(req, 409, { error: 'Current plan is not eligible for self-service scheduling' })
   if (!targetPlanData) return json(req, 404, { error: 'Target billing plan is not available' })
 
   const currentPlan = currentPlanData as PlanRow
   const targetPlan = targetPlanData as PlanRow
-  if (currentPlan.id === targetPlan.id && currentCycle === targetCycle) {
-    return json(req, 409, { error: 'The workspace is already on that plan and billing cycle' })
-  }
+  if (currentPlan.id === targetPlan.id && currentCycle === targetCycle) return json(req, 409, { error: 'The workspace is already on that plan and billing cycle' })
   if (currentPlan.code === 'starter' && targetPlan.code === 'pro' && currentCycle === targetCycle) {
     return json(req, 409, { error: 'Same-cycle Starter to Pro upgrades use the immediate prorated upgrade endpoint' })
   }
@@ -410,66 +339,49 @@ Deno.serve(async (req: Request) => {
     .eq('status', 'processing')
     .lt('updated_at', staleBefore)
 
-  const { data: existingRequest, error: existingRequestError } = await admin
+  const { data: existing, error: existingError } = await admin
     .from('billing_change_requests')
-    .select('request_id, to_plan_id, to_billing_cycle, mode, status, stripe_subscription_schedule_id, effective_at')
+    .select('request_id, to_plan_id, to_billing_cycle, mode, status, effective_at')
     .eq('request_id', requestId)
     .maybeSingle()
-
-  if (existingRequestError) return json(req, 503, { error: 'Billing change idempotency state is temporarily unavailable' })
-  if (existingRequest) {
-    if (existingRequest.to_plan_id !== targetPlan.id || existingRequest.to_billing_cycle !== targetCycle || existingRequest.mode !== 'scheduled') {
+  if (existingError) return json(req, 503, { error: 'Billing change idempotency state is temporarily unavailable' })
+  if (existing) {
+    if (existing.to_plan_id !== targetPlan.id || existing.to_billing_cycle !== targetCycle || existing.mode !== 'scheduled') {
       return json(req, 409, { error: 'This idempotency key was already used for a different billing change' })
     }
-    if (existingRequest.status === 'scheduled') {
+    if (existing.status === 'scheduled') {
       return json(req, 200, {
         status: 'scheduled',
         plan_code: targetPlan.code,
         billing_cycle: targetCycle,
-        effective_at: existingRequest.effective_at,
+        effective_at: existing.effective_at,
         request_id: requestId,
         idempotent_replay: true,
         mode: 'test',
       })
     }
-    if (existingRequest.status === 'processing') {
-      return json(req, 409, { error: 'This billing change is already being processed', request_id: requestId })
-    }
-    return json(req, 409, {
-      error: 'This billing change request already finished without remaining scheduled. Retry with a new idempotency key.',
-      request_id: requestId,
-    })
+    if (existing.status === 'processing') return json(req, 409, { error: 'This billing change is already being processed', request_id: requestId })
+    return json(req, 409, { error: 'This billing change request already finished. Retry with a new idempotency key.', request_id: requestId })
   }
 
   let createdScheduleId: string | null = null
-
   try {
-    const stripeSubscription = await stripe.subscriptions.retrieve(localSubscription.stripe_subscription_id)
+    const stripeSubscription = await stripe.subscriptions.retrieve(local.stripe_subscription_id)
     const rawSubscription = stripeSubscription as unknown as Record<string, unknown>
-
     if (stripeSubscription.livemode) throw new Error('live_subscription_rejected')
-    if (objectId(stripeSubscription.customer) !== localSubscription.stripe_customer_id) {
-      throw new Error('stripe_customer_identity_mismatch')
-    }
+    if (objectId(stripeSubscription.customer) !== local.stripe_customer_id) throw new Error('stripe_customer_identity_mismatch')
     if (stripeSubscription.status !== 'active') throw new Error('stripe_subscription_not_active')
-    if (stripeSubscription.cancel_at_period_end || stripeCancelAt(stripeSubscription)) {
-      throw new Error('stripe_subscription_cancel_scheduled')
-    }
+    if (stripeSubscription.cancel_at_period_end || stripeCancelAt(stripeSubscription)) throw new Error('stripe_subscription_cancel_scheduled')
     if (stripeScheduleId(stripeSubscription)) throw new Error('stripe_subscription_schedule_present')
     if (rawSubscription.pending_update) throw new Error('stripe_subscription_pending_update_present')
 
-    const shapeError = hasUnsupportedBillingShape(stripeSubscription)
+    const shapeError = unsupportedBillingShape(stripeSubscription)
     if (shapeError) throw new Error(shapeError)
-
     const item = singleSubscriptionItem(stripeSubscription)
-    if (!item) throw new Error('stripe_subscription_item_shape_invalid')
-    if (item.price.id !== currentPriceId) throw new Error('stripe_current_price_local_mismatch')
+    if (!item || item.price.id !== currentPriceId) throw new Error('stripe_current_price_local_mismatch')
 
-    const periodStart = currentPeriodStart(stripeSubscription)
-    const periodEnd = currentPeriodEnd(stripeSubscription)
-    if (!periodStart || !periodEnd || periodEnd <= Math.floor(Date.now() / 1000)) {
-      throw new Error('stripe_subscription_period_invalid')
-    }
+    const period = subscriptionPeriod(stripeSubscription)
+    if (!period.start || !period.end || period.end <= Math.floor(Date.now() / 1000)) throw new Error('stripe_subscription_period_invalid')
 
     const [currentStripePrice, targetStripePrice] = await Promise.all([
       stripe.prices.retrieve(currentPriceId),
@@ -480,7 +392,7 @@ Deno.serve(async (req: Request) => {
     const targetValidation = validateStripePrice(targetStripePrice, targetPlan, targetCycle)
     if (targetValidation) throw new Error(`target_${targetValidation}`)
 
-    const reserveResult = await admin.rpc('reserve_scheduled_billing_change_request', {
+    const reserve = await admin.rpc('reserve_scheduled_billing_change_request', {
       p_request_id: requestId,
       p_workspace_id: workspaceId,
       p_requested_by: user.id,
@@ -490,17 +402,12 @@ Deno.serve(async (req: Request) => {
       p_to_billing_cycle: targetCycle,
       p_stripe_subscription_id: stripeSubscription.id,
     })
-
-    if (reserveResult.error) {
-      if (String(reserveResult.error.message || '').includes('Target plan seat limit exceeded')) {
-        return json(req, 409, {
-          error: `This workspace has too many members for ${targetPlan.code}. Remove members before scheduling the change.`,
-        })
+    if (reserve.error) {
+      if (String(reserve.error.message || '').includes('Target plan seat limit exceeded')) {
+        return json(req, 409, { error: `This workspace has too many members for ${targetPlan.code}. Remove members before scheduling the change.` })
       }
-      if (reserveResult.error.code === '23505') {
-        return json(req, 409, { error: 'Another billing change is already active for this workspace' })
-      }
-      throw new Error(`billing_change_reservation_failed:${reserveResult.error.code || 'unknown'}`)
+      if (reserve.error.code === '23505') return json(req, 409, { error: 'Another billing change is already active for this workspace' })
+      throw new Error(`billing_change_reservation_failed:${reserve.error.code || 'unknown'}`)
     }
 
     const created = await stripe.subscriptionSchedules.create(
@@ -508,19 +415,10 @@ Deno.serve(async (req: Request) => {
       { idempotencyKey: `schedule-create:${workspaceId}:${idempotencyKey}` },
     )
     createdScheduleId = created.id
+    if (created.livemode || objectId(created.subscription) !== stripeSubscription.id) throw new Error('stripe_schedule_creation_identity_mismatch')
 
-    if (created.livemode || objectId(created.subscription) !== stripeSubscription.id) {
-      throw new Error('stripe_schedule_creation_identity_mismatch')
-    }
-
-    const scheduleIdPersistError = await updateRequest(admin, requestId, {
-      stripe_subscription_schedule_id: created.id,
-    })
-    if (scheduleIdPersistError) throw new Error('billing_schedule_id_persist_failed')
-
-    const futureDuration = targetCycle === 'annual'
-      ? { interval: 'year' as const, interval_count: 1 }
-      : { interval: 'month' as const, interval_count: 1 }
+    const persistScheduleIdError = await updateRequest(admin, requestId, { stripe_subscription_schedule_id: created.id })
+    if (persistScheduleIdError) throw new Error('billing_schedule_id_persist_failed')
 
     const scheduled = await stripe.subscriptionSchedules.update(
       created.id,
@@ -530,14 +428,17 @@ Deno.serve(async (req: Request) => {
         phases: [
           {
             items: [{ price: currentPriceId, quantity: 1 }],
-            start_date: periodStart,
-            end_date: periodEnd,
+            start_date: period.start,
+            end_date: period.end,
             proration_behavior: 'none',
           },
           {
             items: [{ price: targetPriceId, quantity: 1 }],
-            start_date: periodEnd,
-            duration: futureDuration,
+            start_date: period.end,
+            duration: {
+              interval: targetCycle === 'annual' ? 'year' : 'month',
+              interval_count: 1,
+            },
             billing_cycle_anchor: 'phase_start',
             proration_behavior: 'none',
             metadata: {
@@ -552,27 +453,23 @@ Deno.serve(async (req: Request) => {
       { idempotencyKey: `schedule-update:${workspaceId}:${idempotencyKey}` },
     )
 
-    if (scheduled.livemode) throw new Error('live_schedule_rejected')
-    if (scheduled.status !== 'active') throw new Error('stripe_schedule_not_active')
+    if (scheduled.livemode || scheduled.status !== 'active') throw new Error('stripe_schedule_not_active')
     if (scheduled.end_behavior !== 'release') throw new Error('stripe_schedule_end_behavior_invalid')
     if (objectId(scheduled.subscription) !== stripeSubscription.id) throw new Error('stripe_schedule_subscription_mismatch')
 
-    const currentPhase = scheduled.phases.find((phase) => phase.start_date === periodStart && phase.end_date === periodEnd)
-    const futurePhase = scheduled.phases.find((phase) => phase.start_date === periodEnd && schedulePhasePriceId(phase) === targetPriceId)
-    if (!currentPhase || schedulePhasePriceId(currentPhase) !== currentPriceId) {
-      throw new Error('stripe_schedule_current_phase_unverified')
-    }
-    if (!futurePhase || futurePhase.proration_behavior !== 'none') {
-      throw new Error('stripe_schedule_future_phase_unverified')
-    }
-    const futureMetadata = schedulePhaseMetadata(futurePhase)
-    if (futureMetadata.smart_crm_last_change_request_id !== requestId
-      || futureMetadata.smart_crm_requested_plan !== targetPlan.code
-      || futureMetadata.smart_crm_requested_cycle !== targetCycle) {
+    const currentPhase = scheduled.phases.find((phase) => phase.start_date === period.start && phase.end_date === period.end)
+    const futurePhase = scheduled.phases.find((phase) => phase.start_date === period.end && phasePriceId(phase) === targetPriceId)
+    if (!currentPhase || phasePriceId(currentPhase) !== currentPriceId) throw new Error('stripe_schedule_current_phase_unverified')
+    if (!futurePhase || futurePhase.proration_behavior !== 'none') throw new Error('stripe_schedule_future_phase_unverified')
+
+    const metadata = phaseMetadata(futurePhase)
+    if (metadata.smart_crm_last_change_request_id !== requestId
+      || metadata.smart_crm_requested_plan !== targetPlan.code
+      || metadata.smart_crm_requested_cycle !== targetCycle) {
       throw new Error('stripe_schedule_metadata_unverified')
     }
 
-    const effectiveAt = unixToIso(periodEnd)
+    const effectiveAt = new Date(period.end * 1000).toISOString()
     const finalizeError = await updateRequest(admin, requestId, {
       status: 'scheduled',
       stripe_subscription_schedule_id: scheduled.id,
