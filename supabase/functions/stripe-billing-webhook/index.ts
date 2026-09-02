@@ -19,6 +19,10 @@ type PlanRow = {
   id: string
   code: string
   is_active: boolean
+  currency_code: string
+  price_monthly: number | string | null
+  price_annual: number | string | null
+  stripe_product_id: string | null
   stripe_price_id_monthly: string | null
   stripe_price_id_annual: string | null
 }
@@ -86,9 +90,8 @@ function mapSubscriptionStatus(status: string) {
   return 'incomplete'
 }
 
-function subscriptionPriceId(subscription: Stripe.Subscription) {
-  const firstItem = subscription.items?.data?.[0]
-  return firstItem?.price?.id || null
+function subscriptionPrice(subscription: Stripe.Subscription) {
+  return subscription.items?.data?.[0]?.price || null
 }
 
 async function findWorkspaceByStripeIdentity(
@@ -144,10 +147,10 @@ async function assertStripeIdentityNotCrossTenant(
   }
 }
 
-async function resolvePlanFromPrice(admin: AdminClient, priceId: string) {
+async function resolvePlanFromPrice(admin: AdminClient, price: Stripe.Price) {
   const { data, error } = await admin
     .from('plans')
-    .select('id, code, is_active, stripe_price_id_monthly, stripe_price_id_annual')
+    .select('id, code, is_active, currency_code, price_monthly, price_annual, stripe_product_id, stripe_price_id_monthly, stripe_price_id_annual')
     .eq('is_active', true)
 
   if (error) throw new Error(`plan_mapping_lookup_failed:${error.code || 'unknown'}`)
@@ -155,12 +158,38 @@ async function resolvePlanFromPrice(admin: AdminClient, priceId: string) {
   const matches: Array<{ plan: PlanRow; billingCycle: 'monthly' | 'annual' }> = []
   for (const row of (data || []) as PlanRow[]) {
     if (!STRIPE_PLAN_CODES.has(row.code)) continue
-    if (row.stripe_price_id_monthly === priceId) matches.push({ plan: row, billingCycle: 'monthly' })
-    if (row.stripe_price_id_annual === priceId) matches.push({ plan: row, billingCycle: 'annual' })
+    if (row.stripe_price_id_monthly === price.id) matches.push({ plan: row, billingCycle: 'monthly' })
+    if (row.stripe_price_id_annual === price.id) matches.push({ plan: row, billingCycle: 'annual' })
   }
 
   if (matches.length !== 1) throw new Error('stripe_price_mapping_missing_or_ambiguous')
-  return matches[0]
+  const mapping = matches[0]
+
+  if (!mapping.plan.stripe_product_id?.startsWith('prod_')) throw new Error('stripe_product_mapping_missing')
+  if (objectId(price.product) !== mapping.plan.stripe_product_id) throw new Error('stripe_product_mapping_mismatch')
+
+  const currency = mapping.plan.currency_code.trim().toUpperCase()
+  if (currency !== 'USD') throw new Error('unsupported_billing_currency')
+  if (price.currency.toUpperCase() !== currency) throw new Error('stripe_price_currency_mismatch')
+
+  const configuredMajorAmount = Number(
+    mapping.billingCycle === 'annual' ? mapping.plan.price_annual : mapping.plan.price_monthly,
+  )
+  if (!Number.isFinite(configuredMajorAmount) || configuredMajorAmount < 0) {
+    throw new Error('local_plan_amount_invalid')
+  }
+  if (price.unit_amount !== Math.round(configuredMajorAmount * 100)) {
+    throw new Error('stripe_price_amount_mismatch')
+  }
+
+  const expectedInterval = mapping.billingCycle === 'annual' ? 'year' : 'month'
+  if (!price.recurring || price.recurring.interval !== expectedInterval) {
+    throw new Error('stripe_price_interval_mismatch')
+  }
+  if (price.recurring.interval_count !== 1) throw new Error('stripe_price_interval_count_mismatch')
+  if (price.recurring.usage_type !== 'licensed') throw new Error('stripe_price_usage_type_mismatch')
+
+  return mapping
 }
 
 async function loadCurrentSubscription(admin: AdminClient, workspaceId: string) {
@@ -192,21 +221,28 @@ async function syncStripeSubscription(
 
   await assertStripeIdentityNotCrossTenant(admin, workspaceId, customerId, subscriptionId)
 
-  const priceId = subscriptionPriceId(subscription)
-  if (!priceId) throw new Error('stripe_subscription_price_missing')
-  const mapping = await resolvePlanFromPrice(admin, priceId)
-
-  if (metadata.plan_code && metadata.plan_code !== mapping.plan.code) {
-    throw new Error('stripe_subscription_plan_metadata_mismatch')
-  }
-  if (metadata.billing_cycle && metadata.billing_cycle !== mapping.billingCycle) {
-    throw new Error('stripe_subscription_cycle_metadata_mismatch')
-  }
+  const price = subscriptionPrice(subscription)
+  if (!price) throw new Error('stripe_subscription_price_missing')
+  const mapping = await resolvePlanFromPrice(admin, price)
 
   const current = await loadCurrentSubscription(admin, workspaceId)
   if (current.billing_provider === 'manual') {
     throw new Error('manual_subscription_requires_explicit_conversion')
   }
+
+  // Checkout metadata is an initial tenant-routing assertion, not permanent
+  // plan authority. Once Stripe owns the subscription, the current Stripe
+  // Price is authoritative so legitimate Portal upgrades/downgrades are not
+  // blocked by stale metadata from the original Checkout Session.
+  if (current.billing_provider === 'none') {
+    if (metadata.plan_code && metadata.plan_code !== mapping.plan.code) {
+      throw new Error('stripe_subscription_plan_metadata_mismatch')
+    }
+    if (metadata.billing_cycle && metadata.billing_cycle !== mapping.billingCycle) {
+      throw new Error('stripe_subscription_cycle_metadata_mismatch')
+    }
+  }
+
   if (current.billing_provider === 'stripe') {
     if (current.stripe_customer_id && current.stripe_customer_id !== customerId) {
       throw new Error('stripe_customer_identity_mismatch')
@@ -267,11 +303,17 @@ async function handleEvent(admin: AdminClient, stripe: Stripe, event: Stripe.Eve
     return await syncStripeSubscription(admin, subscription, metadataObject(session.metadata))
   }
 
-  if (
-    event.type === 'customer.subscription.created'
-    || event.type === 'customer.subscription.updated'
-    || event.type === 'customer.subscription.deleted'
-  ) {
+  if (event.type === 'customer.subscription.created' || event.type === 'customer.subscription.updated') {
+    const eventSubscription = event.data.object as Stripe.Subscription
+    // Re-fetch current Stripe state so a delayed created/updated event cannot
+    // roll local billing backward after a newer lifecycle event already won.
+    const currentSubscription = await stripe.subscriptions.retrieve(eventSubscription.id)
+    return await syncStripeSubscription(admin, currentSubscription)
+  }
+
+  if (event.type === 'customer.subscription.deleted') {
+    // The deletion event itself carries the terminal state. Avoid depending on
+    // post-deletion retrieval behavior while still preserving identity checks.
     return await syncStripeSubscription(admin, event.data.object as Stripe.Subscription)
   }
 
@@ -320,7 +362,7 @@ Deno.serve(async (req: Request) => {
       undefined,
       cryptoProvider,
     )
-  } catch (error) {
+  } catch {
     console.warn('Stripe webhook signature verification failed')
     return json(400, { error: 'Invalid Stripe signature' })
   }
