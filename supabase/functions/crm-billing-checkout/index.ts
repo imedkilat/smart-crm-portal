@@ -12,6 +12,10 @@ type PlanRow = {
   code: string
   is_active: boolean
   is_public: boolean
+  currency_code: string
+  price_monthly: number | string | null
+  price_annual: number | string | null
+  stripe_product_id: string | null
   stripe_price_id_monthly: string | null
   stripe_price_id_annual: string | null
 }
@@ -61,6 +65,12 @@ function validIdempotencyKey(value: string | null) {
   return /^[A-Za-z0-9:_-]{8,128}$/.test(key) ? key : null
 }
 
+function stripeObjectId(value: unknown) {
+  if (typeof value === 'string') return value
+  if (value && typeof value === 'object' && 'id' in value && typeof value.id === 'string') return value.id
+  return null
+}
+
 function loadStripeTestConfig() {
   const mode = Deno.env.get('STRIPE_BILLING_MODE') || ''
   const secretKey = Deno.env.get('STRIPE_SECRET_KEY') || ''
@@ -71,6 +81,28 @@ function loadStripeTestConfig() {
   }
 
   return { secretKey }
+}
+
+function validateStripePrice(price: Stripe.Price, plan: PlanRow, billingCycle: 'monthly' | 'annual') {
+  if (!price.active) return 'stripe_price_inactive'
+  if (!plan.stripe_product_id?.startsWith('prod_')) return 'stripe_product_mapping_missing'
+  if (stripeObjectId(price.product) !== plan.stripe_product_id) return 'stripe_product_mapping_mismatch'
+
+  const currency = plan.currency_code.trim().toUpperCase()
+  if (currency !== 'USD') return 'unsupported_billing_currency'
+  if (price.currency.toUpperCase() !== currency) return 'stripe_price_currency_mismatch'
+
+  const configuredMajorAmount = Number(billingCycle === 'annual' ? plan.price_annual : plan.price_monthly)
+  if (!Number.isFinite(configuredMajorAmount) || configuredMajorAmount < 0) return 'local_plan_amount_invalid'
+  const expectedUnitAmount = Math.round(configuredMajorAmount * 100)
+  if (price.unit_amount !== expectedUnitAmount) return 'stripe_price_amount_mismatch'
+
+  const expectedInterval = billingCycle === 'annual' ? 'year' : 'month'
+  if (!price.recurring || price.recurring.interval !== expectedInterval) return 'stripe_price_interval_mismatch'
+  if (price.recurring.interval_count !== 1) return 'stripe_price_interval_count_mismatch'
+  if (price.recurring.usage_type !== 'licensed') return 'stripe_price_usage_type_mismatch'
+
+  return null
 }
 
 Deno.serve(async (req: Request) => {
@@ -120,6 +152,8 @@ Deno.serve(async (req: Request) => {
   if (!ALLOWED_PLANS.has(planCode)) return json(req, 422, { error: 'Stripe Checkout currently supports Starter or Pro only' })
   if (!ALLOWED_CYCLES.has(billingCycle)) return json(req, 422, { error: 'Select monthly or annual billing' })
 
+  const trustedBillingCycle = billingCycle as 'monthly' | 'annual'
+
   const { data: membership, error: membershipError } = await admin
     .from('workspace_members')
     .select('role')
@@ -134,7 +168,7 @@ Deno.serve(async (req: Request) => {
 
   const { data: plan, error: planError } = await admin
     .from('plans')
-    .select('id, code, is_active, is_public, stripe_price_id_monthly, stripe_price_id_annual')
+    .select('id, code, is_active, is_public, currency_code, price_monthly, price_annual, stripe_product_id, stripe_price_id_monthly, stripe_price_id_annual')
     .eq('code', planCode)
     .eq('is_active', true)
     .eq('is_public', true)
@@ -144,15 +178,15 @@ Deno.serve(async (req: Request) => {
   if (!plan) return json(req, 404, { error: 'Billing plan is not available' })
 
   const trustedPlan = plan as PlanRow
-  const priceId = billingCycle === 'annual'
+  const priceId = trustedBillingCycle === 'annual'
     ? trustedPlan.stripe_price_id_annual
     : trustedPlan.stripe_price_id_monthly
 
-  if (!priceId || !priceId.startsWith('price_')) {
+  if (!priceId || !priceId.startsWith('price_') || !trustedPlan.stripe_product_id?.startsWith('prod_')) {
     return json(req, 503, {
-      error: 'Stripe test pricing is not configured for this plan and billing cycle',
+      error: 'Stripe test Product/Price mapping is not configured for this plan and billing cycle',
       plan_code: planCode,
-      billing_cycle: billingCycle,
+      billing_cycle: trustedBillingCycle,
     })
   }
 
@@ -181,6 +215,10 @@ Deno.serve(async (req: Request) => {
     })
   }
 
+  if (subscription.billing_provider !== 'none' || subscription.billing_cycle !== 'none') {
+    return json(req, 409, { error: 'Subscription provider state requires administrator review before Checkout' })
+  }
+
   if (subscription.stripe_customer_id || subscription.stripe_subscription_id) {
     return json(req, 409, { error: 'Subscription identity requires administrator review before Checkout' })
   }
@@ -189,11 +227,25 @@ Deno.serve(async (req: Request) => {
   const metadata = {
     workspace_id: workspaceId,
     plan_code: planCode,
-    billing_cycle: billingCycle,
+    billing_cycle: trustedBillingCycle,
     requested_by: user.id,
   }
 
   try {
+    const stripePrice = await stripe.prices.retrieve(priceId)
+    const pricingValidationError = validateStripePrice(stripePrice, trustedPlan, trustedBillingCycle)
+    if (pricingValidationError) {
+      console.error('Stripe test price mapping validation failed', {
+        planCode,
+        billingCycle: trustedBillingCycle,
+        reason: pricingValidationError,
+      })
+      return json(req, 503, {
+        error: 'Stripe test pricing mapping failed validation',
+        pricing_reason: pricingValidationError,
+      })
+    }
+
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       client_reference_id: workspaceId,
@@ -216,7 +268,7 @@ Deno.serve(async (req: Request) => {
       checkout_session_id: session.id,
       checkout_url: session.url,
       plan_code: planCode,
-      billing_cycle: billingCycle,
+      billing_cycle: trustedBillingCycle,
       mode: 'test',
     })
   } catch (error) {
