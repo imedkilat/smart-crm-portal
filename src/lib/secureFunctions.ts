@@ -3,7 +3,12 @@ import { supabase } from './supabase'
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined
 const supabasePublishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined
 
-type SecureFunctionName = 'crm-lead-intake' | 'crm-status-route' | 'crm-ai-copilot'
+type SecureFunctionName =
+  | 'crm-lead-intake'
+  | 'crm-status-route'
+  | 'crm-ai-copilot'
+  | 'crm-billing-checkout'
+  | 'crm-billing-portal'
 
 type InvokeOptions = {
   workspaceId?: string | null
@@ -58,7 +63,13 @@ export async function invokeSecureAutomation(
   const headers: Record<string, string> = {
     Authorization: `Bearer ${session.access_token}`,
     apikey: supabasePublishableKey,
-    'X-Idempotency-Key': options.idempotencyKey || automaticIdempotencyKey(functionName, body),
+  }
+
+  // The billing portal does not use request idempotency and intentionally does
+  // not allow the header in its CORS contract. Every other secure automation
+  // keeps the existing idempotency behavior.
+  if (functionName !== 'crm-billing-portal') {
+    headers['X-Idempotency-Key'] = options.idempotencyKey || automaticIdempotencyKey(functionName, body)
   }
 
   if (options.workspaceId) headers['X-Workspace-Id'] = options.workspaceId
