@@ -56,7 +56,10 @@ alter table public.subscriptions
     (
       billing_provider = 'stripe'
       and stripe_customer_id is not null
-      and stripe_subscription_id is not null
+      and (
+        stripe_subscription_id is not null
+        or status = 'incomplete'
+      )
     )
     or (
       billing_provider in ('none', 'manual')
@@ -83,7 +86,7 @@ alter table public.billing_events
 -- Normalize provider semantics at the authoritative database boundary. This
 -- keeps existing onboarding code safe: self-signup Free has billing_cycle=none
 -- and remains provider=none; manually provisioned monthly/annual/custom rows
--- become provider=manual. Stripe identity cannot be half-configured.
+-- become provider=manual. Stripe identity automatically marks a row as Stripe.
 create or replace function private.normalize_subscription_billing_provider()
 returns trigger
 language plpgsql
@@ -154,7 +157,7 @@ create index if not exists idx_billing_events_provider_created
   on public.billing_events (billing_provider, created_at desc);
 
 comment on column public.subscriptions.billing_provider is
-  'Lifecycle authority for this subscription: none (unbilled), manual (admin/invoice managed), or stripe (Stripe-managed).';
+  'Lifecycle authority for this subscription: none (unbilled), manual (admin/invoice managed), or stripe (Stripe-managed). Incomplete Stripe state may have customer identity before subscription identity.';
 
 comment on column public.billing_events.billing_provider is
   'Billing system associated with the event: none, manual, or stripe.';
