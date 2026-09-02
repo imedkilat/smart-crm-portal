@@ -26,6 +26,29 @@
 
 .workspace-switcher-compact { display: none; }
 
+.sidebar-status .live-row > span:last-child {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.sidebar-status .live-row::after {
+  content: 'Systems connected';
+}
+
+.sidebar-status > p {
+  font-size: 0;
+}
+
+.sidebar-status > p::after {
+  content: 'production services · live data';
+  font-size: 11.5px;
+}
+
 @media (min-width: 861px) {
   .app-shell.sidebar-collapsed .sidebar { width: 76px; }
   .app-shell.sidebar-collapsed .workspace { margin-left: 76px; }
