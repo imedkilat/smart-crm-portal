@@ -15,7 +15,7 @@ type BillingPlanCode = 'starter' | 'pro'
 type BillingCycleChoice = 'monthly' | 'annual'
 type BillingProvider = 'none' | 'manual' | 'stripe'
 type BillingNotice = { tone: 'success' | 'info'; message: string }
-type WorkspaceSettingsTab = 'identity' | 'messages'
+type WorkspaceSettingsTab = 'identity' | 'messages' | 'profile'
 
 type Props = {
   onOpenRunLog: () => void
@@ -257,14 +257,14 @@ export default function SettingsPage({ onOpenRunLog, onLeadRestored }: Props) {
         </article>
       </section>
 
-      <section className="settings-tabbed-section" aria-label="Workspace experience settings">
+      <section className="settings-tabbed-section" aria-label="Workspace and account settings">
         <div className="settings-tab-toolbar">
           <div>
-            <span className="mini-label">WORKSPACE EXPERIENCE</span>
-            <h2>Brand & message setup</h2>
-            <p>Switch between client identity and message design without scrolling through both editors.</p>
+            <span className="mini-label">WORKSPACE & ACCOUNT</span>
+            <h2>Identity, messages & profile</h2>
+            <p>Use tabs to edit one settings area at a time without scrolling through every editor.</p>
           </div>
-          <div className="settings-tabs" role="tablist" aria-label="Workspace setup tabs">
+          <div className="settings-tabs" role="tablist" aria-label="Workspace and account setup tabs">
             <button
               type="button"
               role="tab"
@@ -283,10 +283,20 @@ export default function SettingsPage({ onOpenRunLog, onLeadRestored }: Props) {
             >
               Message design
             </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={workspaceSettingsTab === 'profile'}
+              className={workspaceSettingsTab === 'profile' ? 'active' : ''}
+              onClick={() => setWorkspaceSettingsTab('profile')}
+            >
+              Your profile
+            </button>
           </div>
         </div>
         <div className="settings-tab-content" hidden={workspaceSettingsTab !== 'identity'}><WorkspaceBrandingPanel /></div>
         <div className="settings-tab-content" hidden={workspaceSettingsTab !== 'messages'}><MessageTemplatesPanel /></div>
+        <div className="settings-tab-content profile-tab-content" hidden={workspaceSettingsTab !== 'profile'}><AccountProfilePanel /></div>
       </section>
 
       {isPlatformAdmin ? <SubscriberProvisioningPanel /> : null}
@@ -308,8 +318,6 @@ export default function SettingsPage({ onOpenRunLog, onLeadRestored }: Props) {
         </article>
 
         <aside className="settings-side-column">
-          <AccountProfilePanel />
-
           <article className="panel settings-section-card compact-card">
             <span className="mini-label">SUBSCRIPTION</span>
             <div className="settings-plan-heading">
