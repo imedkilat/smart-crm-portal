@@ -21,11 +21,11 @@ function metadataString(metadata: Record<string, unknown>, key: string) {
 }
 
 function profileFromMetadata(metadata: Record<string, unknown>, email: string) {
-  const preferredName = metadataString(metadata, 'full_name') || metadataString(metadata, 'name') || metadataString(metadata, 'display_name')
-  const parts = preferredName ? preferredName.split(/\s+/) : []
+  const preferredName = metadataString(metadata, 'display_name') || metadataString(metadata, 'full_name') || metadataString(metadata, 'name')
+  const parts = (metadataString(metadata, 'full_name') || preferredName).split(/\s+/).filter(Boolean)
   const firstName = metadataString(metadata, 'first_name') || parts[0] || ''
   const lastName = metadataString(metadata, 'last_name') || parts.slice(1).join(' ')
-  const displayName = metadataString(metadata, 'display_name') || preferredName
+  const displayName = preferredName
 
   return { firstName, lastName, displayName, email }
 }
@@ -81,15 +81,15 @@ export default function AccountProfilePanel() {
 
     const firstName = draft.firstName.trim()
     const lastName = draft.lastName.trim()
-    const fullName = [firstName, lastName].filter(Boolean).join(' ').trim()
-    const displayName = draft.displayName.trim() || fullName
+    const legalName = [firstName, lastName].filter(Boolean).join(' ').trim()
+    const displayName = draft.displayName.trim() || legalName
 
     if (!displayName) {
       setError('Add a display name or at least a first name before saving.')
       return
     }
-    if ([firstName, lastName, displayName].some((value) => value.length > 120)) {
-      setError('Profile name fields must be 120 characters or less.')
+    if ([firstName, lastName, displayName].some((value) => value.length > 120) || legalName.length > 240) {
+      setError('Profile name fields are too long.')
       return
     }
 
@@ -101,7 +101,8 @@ export default function AccountProfilePanel() {
       ...sourceMetadata,
       first_name: firstName || null,
       last_name: lastName || null,
-      full_name: fullName || displayName,
+      full_name: displayName,
+      name: displayName,
       display_name: displayName,
     }
 
