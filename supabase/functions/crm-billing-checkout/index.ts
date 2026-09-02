@@ -71,6 +71,13 @@ function stripeObjectId(value: unknown) {
   return null
 }
 
+async function stableBillingRequestId(workspaceId: string, idempotencyKey: string) {
+  const bytes = new TextEncoder().encode(`${workspaceId}:${idempotencyKey}`)
+  const digest = await crypto.subtle.digest('SHA-256', bytes)
+  const hex = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
+  return `brq_${hex.slice(0, 32)}`
+}
+
 function loadStripeTestConfig() {
   const mode = Deno.env.get('STRIPE_BILLING_MODE') || ''
   const secretKey = Deno.env.get('STRIPE_SECRET_KEY') || ''
@@ -224,11 +231,13 @@ Deno.serve(async (req: Request) => {
   }
 
   const stripe = new Stripe(stripeConfig.secretKey)
+  const billingRequestId = await stableBillingRequestId(workspaceId, idempotencyKey)
   const metadata = {
     workspace_id: workspaceId,
     plan_code: planCode,
     billing_cycle: trustedBillingCycle,
     requested_by: user.id,
+    billing_request_id: billingRequestId,
   }
 
   try {
@@ -262,6 +271,32 @@ Deno.serve(async (req: Request) => {
     if (!session.url) {
       console.error('Stripe Checkout session has no URL', { sessionId: session.id })
       return json(req, 502, { error: 'Stripe Checkout did not return a redirect URL' })
+    }
+
+    // The first none -> Stripe entitlement transition must be anchored to a
+    // server-created Checkout request. We record this only after Stripe returns
+    // the session and before exposing the session URL to the caller.
+    const { error: requestLedgerError } = await admin.from('billing_events').insert({
+      workspace_id: workspaceId,
+      stripe_event_id: null,
+      event_type: 'stripe_checkout.request_created',
+      billing_provider: 'none',
+      payload: {
+        billing_request_id: billingRequestId,
+        checkout_session_id: session.id,
+        plan_code: planCode,
+        billing_cycle: trustedBillingCycle,
+        requested_by: user.id,
+      },
+      processed_at: new Date().toISOString(),
+      error_message: null,
+    })
+
+    if (requestLedgerError) {
+      console.error('Stripe Checkout request ledger failed', { code: requestLedgerError.code })
+      return json(req, 503, {
+        error: 'Checkout request could not be authorized locally. No local entitlement was changed.',
+      })
     }
 
     return json(req, 201, {
