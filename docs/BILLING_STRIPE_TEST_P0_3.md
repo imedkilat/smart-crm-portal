@@ -85,14 +85,19 @@ This prevents a stale or accidentally mis-mapped `price_...` ID from silently cr
 
 Checkout does **not** mutate the local subscription before payment. The workspace stays on its existing local entitlement until a signed Stripe webhook confirms the Stripe subscription. This prevents an abandoned Checkout Session from downgrading or corrupting the current workspace state.
 
-Checkout metadata carries only trusted routing identifiers:
+A deterministic, server-derived `billing_request_id` is added to Checkout/subscription metadata. After Stripe returns the Checkout Session but **before** the session URL is exposed to the caller, Smart CRM records a minimized `stripe_checkout.request_created` row in the existing `billing_events` audit ledger. The row is `billing_provider=none` with no `stripe_event_id`, because it represents a local Checkout authorization request rather than a Stripe webhook event.
+
+If that local audit write fails, the function does not return the Checkout URL and no local entitlement changes. Retrying the same workspace-scoped idempotency key produces the same deterministic billing request ID and Stripe idempotency key.
+
+Checkout metadata carries only trusted routing/audit identifiers:
 
 - `workspace_id`;
 - `plan_code`;
 - `billing_cycle`;
-- `requested_by`.
+- `requested_by`;
+- `billing_request_id`.
 
-The same metadata is attached to `subscription_data` so initial subscription events can be tenant-resolved without trusting browser state.
+The same metadata is attached to `subscription_data` so initial subscription events can be tenant-resolved and matched to the server-created Checkout audit without trusting browser state.
 
 Success/cancel URLs are server-controlled Smart CRM URLs rather than arbitrary client return URLs.
 
@@ -118,9 +123,9 @@ The function authenticates Stripe by:
 3. validating the signature with `stripe.webhooks.constructEventAsync(...)` and `STRIPE_WEBHOOK_SECRET`;
 4. rejecting verified live-mode events during P0-3.
 
-Every verified event is first represented in `public.billing_events` using the unique `stripe_event_id`.
+Every verified Stripe event is first represented in `public.billing_events` using the unique `stripe_event_id`.
 
-The stored payload is a minimized audit envelope rather than the full Stripe payload, reducing billing/customer PII retention. It contains only event/object identifiers, type, creation timestamp, and livemode state.
+The stored webhook payload is a minimized audit envelope rather than the full Stripe payload, reducing billing/customer PII retention. It contains only event/object identifiers, type, creation timestamp, and livemode state.
 
 Replay behavior:
 
@@ -142,15 +147,16 @@ P0-3 handles:
 
 The webhook resolves the authoritative plan from the Stripe subscription Price ID against the server-stored plan mapping. It does not trust event metadata alone to choose the plan.
 
-Only Starter/Pro Price mappings are accepted by the self-service Stripe path. The subscription's actual Stripe Price is also checked against the mapped Product, USD amount, recurring interval/count, and licensed usage type before local billing state is updated. Unlike Checkout creation, webhook lifecycle sync does not require the Price to remain active because an existing subscription may legitimately reference a later-archived Price during cancellation or recovery processing.
+Only Starter/Pro Price mappings are accepted by the self-service Stripe path. A valid Smart CRM subscription must contain exactly one subscription item with quantity `1`. The subscription's actual Stripe Price is checked against the mapped Product, USD amount, recurring interval/count, and licensed usage type before local billing state is updated. Unlike Checkout creation, webhook lifecycle sync does not require the Price to remain active because an existing subscription may legitimately reference a later-archived Price during cancellation or recovery processing.
 
-Before updating a workspace subscription, the webhook:
+Before the first `billing_provider=none` → Stripe transition, the webhook additionally requires the server-created `stripe_checkout.request_created` audit identified by `billing_request_id`. Its workspace, plan, cycle, and requester must match the signed Stripe subscription metadata and the server-side Price mapping. A Stripe subscription created outside Smart CRM cannot grant paid entitlement merely by carrying a workspace ID or hand-authored metadata.
+
+Before updating a workspace subscription, the webhook also:
 
 - resolves the workspace from trusted initial subscription metadata or an existing Stripe identity;
 - rejects cross-workspace reuse of a Stripe Customer or Subscription ID;
 - refuses to overwrite `billing_provider=manual` without a future explicit conversion flow;
-- verifies an existing Stripe identity still matches the same workspace;
-- validates Checkout plan/cycle metadata against the server Price mapping only on the initial `billing_provider=none` → Stripe transition.
+- verifies an existing Stripe identity still matches the same workspace.
 
 Once `billing_provider=stripe`, the current Stripe subscription Price becomes plan/cycle authority. This deliberately avoids treating the original Checkout metadata as permanent plan state, so a future legitimate Customer Portal upgrade/downgrade is not rejected merely because the original metadata is stale.
 
@@ -179,7 +185,7 @@ deno check --node-modules-dir=auto supabase/functions/crm-billing-portal/index.t
 deno check --node-modules-dir=auto supabase/functions/stripe-billing-webhook/index.ts
 ```
 
-The static safety contract verifies test-key guards, server-trusted Product/Price lookup, exact amount/currency/interval validation, owner/admin billing authorization, webhook raw-body signature verification, replay handling, minimized event payloads, lifecycle tenant guards, and explicit function JWT settings.
+The static safety contract verifies test-key guards, server-trusted Product/Price lookup, exact amount/currency/interval validation, trusted Checkout activation auditing, single-item subscription shape, owner/admin billing authorization, webhook raw-body signature verification, replay handling, minimized event payloads, lifecycle tenant guards, and explicit function JWT settings.
 
 ## Controlled test-mode rollout order
 
@@ -194,14 +200,15 @@ Do not perform these steps merely because this source PR is merged.
 7. Deploy `stripe-billing-webhook` with JWT verification disabled exactly as declared in config.
 8. Register the Stripe test webhook endpoint for the supported lifecycle events.
 9. Run controlled Checkout using a dedicated QA Free workspace only.
-10. Confirm Checkout creation alone does not change the local Free subscription.
+10. Confirm Checkout creates a local `stripe_checkout.request_created` audit but does not change the local Free subscription.
 11. Complete payment with a Stripe test payment method.
 12. Confirm signed webhook sync transitions only the QA workspace to `billing_provider=stripe` and the expected Starter/Pro plan.
-13. Replay the same event and confirm no duplicate state mutation.
-14. Exercise subscription update/cancel/payment-failure scenarios, including delayed-event ordering where practical and Stripe test clocks where appropriate.
-15. Confirm Customer Portal can only be opened by an owner/admin of the Stripe-managed QA workspace.
-16. Re-run entitlement/quota, tenant-isolation, and billing provider regression checks.
-17. Keep live Stripe mode disabled.
+13. Confirm a signed test subscription with no matching Smart CRM Checkout audit is rejected and does not grant entitlement.
+14. Replay the same event and confirm no duplicate state mutation.
+15. Exercise subscription update/cancel/payment-failure scenarios, including delayed-event ordering where practical and Stripe test clocks where appropriate.
+16. Confirm Customer Portal can only be opened by an owner/admin of the Stripe-managed QA workspace.
+17. Re-run entitlement/quota, tenant-isolation, and billing provider regression checks.
+18. Keep live Stripe mode disabled.
 
 ## Remaining blockers before real charges
 
