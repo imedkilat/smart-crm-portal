@@ -69,7 +69,7 @@ Requirements:
 6. client-supplied Stripe Product/Price IDs are never accepted;
 7. manually billed subscriptions cannot be silently converted;
 8. an existing Stripe billing relationship cannot create a second Checkout path;
-9. the pre-Checkout local subscription must still be the unbilled `billing_provider=none` / `billing_cycle=none` baseline;
+9. the pre-Checkout local subscription must be the canonical Free plan with `billing_provider=none`, `billing_cycle=none`, and no Stripe identity;
 10. an `x-idempotency-key` is required and forwarded to Stripe as a workspace-scoped idempotency key.
 
 Before creating a Checkout Session, the server retrieves the configured Stripe Price and validates it against the local sellable plan. It fails closed unless:
@@ -185,7 +185,7 @@ deno check --node-modules-dir=auto supabase/functions/crm-billing-portal/index.t
 deno check --node-modules-dir=auto supabase/functions/stripe-billing-webhook/index.ts
 ```
 
-The static safety contract verifies test-key guards, server-trusted Product/Price lookup, exact amount/currency/interval validation, trusted Checkout activation auditing, single-item subscription shape, owner/admin billing authorization, webhook raw-body signature verification, replay handling, minimized event payloads, lifecycle tenant guards, and explicit function JWT settings.
+The static safety contract verifies test-key guards, canonical Free starting state, server-trusted Product/Price lookup, exact amount/currency/interval validation, trusted Checkout activation auditing, single-item subscription shape, owner/admin billing authorization, webhook raw-body signature verification, replay handling, minimized event payloads, lifecycle tenant guards, and explicit function JWT settings.
 
 ## Controlled test-mode rollout order
 
@@ -218,7 +218,10 @@ P0-3 source completion is not commercial billing launch approval. Remaining gate
 - successful end-to-end test-mode Checkout/webhook/Portal QA;
 - explicit seat-limit enforcement for `max_seats`;
 - safe handling of plan upgrades/downgrades and proration policy;
+- explicit Stripe Customer Portal configuration/policy for permitted plan changes and cancellations;
+- versioned Stripe Price mapping / grandfathering policy before changing commercial plan prices;
 - explicit migration policy for manually billed customers;
+- billing-endpoint abuse/rate-limit policy before live self-service exposure;
 - durable reconciliation/recovery for missed or out-of-order Stripe events beyond event-time re-fetch protection;
 - final security/advisor review;
 - a separate live-mode cutover PR and explicit owner approval.
