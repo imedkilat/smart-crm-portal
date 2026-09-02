@@ -40,6 +40,6 @@ jobs:
 
       - name: Type-check billing Edge Functions
         run: |
-          deno check supabase/functions/crm-billing-checkout/index.ts
-          deno check supabase/functions/crm-billing-portal/index.ts
-          deno check supabase/functions/stripe-billing-webhook/index.ts
+          deno check --node-modules-dir=auto supabase/functions/crm-billing-checkout/index.ts
+          deno check --node-modules-dir=auto supabase/functions/crm-billing-portal/index.ts
+          deno check --node-modules-dir=auto supabase/functions/stripe-billing-webhook/index.ts
