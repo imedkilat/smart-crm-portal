@@ -150,6 +150,17 @@
 .settings-inline-message { margin-top: 16px; padding: 11px 13px; border-radius: 10px; font-size: 11px; line-height: 1.5; }
 .settings-inline-message.error { border: 1px solid #ffc9c3; background: #fff4f2; color: #b42318; }
 .settings-inline-message.success { border: 1px solid #b7ebcc; background: #effbf4; color: #087443; }
+.settings-inline-message.info { border: 1px solid #cdddfb; background: #f4f7ff; color: #3557a5; }
+.billing-upgrade-controls { display: grid; gap: 12px; margin-top: 16px; padding-top: 14px; border-top: 1px solid #eef1f5; }
+.billing-upgrade-controls > div > strong { display: block; color: #344054; font-size: 11.5px; }
+.billing-upgrade-controls > div > p { margin: 5px 0 0; color: #8a94a8; font-size: 10.5px; line-height: 1.5; }
+.billing-field-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.billing-field-row label { display: grid; gap: 6px; min-width: 0; }
+.billing-field-row label > span { color: #667085; font-size: 9.5px; font-weight: 800; letter-spacing: .025em; }
+.billing-field-row select { width: 100%; height: 38px; border: 1px solid #dce2ec; border-radius: 9px; background: #fff; color: #344054; padding: 0 10px; font: inherit; font-size: 11px; outline: none; }
+.billing-field-row select:focus { border-color: #7c9cff; box-shadow: 0 0 0 3px rgba(54, 99, 233, .1); }
+.billing-field-row select:disabled { background: #f5f6f8; color: #8992a4; }
+.billing-action-button { width: 100%; justify-content: center; }
 .subscriber-provisioning-note { margin-top: 14px; }
 .settings-muted { margin: 12px 0 0; color: #475467; font-size: 12px; font-weight: 700; }
 .settings-note { margin: 12px 0 0; padding-top: 12px; border-top: 1px solid #eef1f5; color: #8a94a8; font-size: 10.8px; line-height: 1.55; }
@@ -164,6 +175,7 @@
 
 @media (max-width: 680px) {
   .subscriber-provisioning-form { grid-template-columns: 1fr; }
+  .billing-field-row { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 720px) {
