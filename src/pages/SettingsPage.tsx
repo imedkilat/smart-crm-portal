@@ -5,31 +5,21 @@ import { invokeSecureAutomation } from '../lib/secureFunctions'
 import type { Database } from '../types/database'
 import WorkspaceBrandingPanel from '../components/WorkspaceBrandingPanel'
 import MessageTemplatesPanel from '../components/MessageTemplatesPanel'
+import AccountProfilePanel from '../components/AccountProfilePanel'
 import SubscriberProvisioningPanel from '../components/SubscriberProvisioningPanel'
 import ArchivePage from './ArchivePage'
 import { useWorkspace } from '../workspace-context'
-
-const LEAD_WEBHOOK = import.meta.env.VITE_N8N_LEAD_WEBHOOK_URL || 'https://tolakautomations.app.n8n.cloud/webhook/799b1d66-0a5f-44b0-8f43-600ea4775979'
-const STATUS_WEBHOOK = import.meta.env.VITE_N8N_STATUS_WEBHOOK_URL || 'https://tolakautomations.app.n8n.cloud/webhook/smart-crm-status-route'
 
 type Lead = Database['public']['Tables']['leads']['Row']
 type BillingPlanCode = 'starter' | 'pro'
 type BillingCycleChoice = 'monthly' | 'annual'
 type BillingProvider = 'none' | 'manual' | 'stripe'
 type BillingNotice = { tone: 'success' | 'info'; message: string }
+type WorkspaceSettingsTab = 'identity' | 'messages' | 'profile'
 
 type Props = {
   onOpenRunLog: () => void
   onLeadRestored?: (lead: Lead) => void
-}
-
-function endpointLabel(url: string) {
-  try {
-    const parsed = new URL(url)
-    return `${parsed.hostname}${parsed.pathname}`
-  } catch {
-    return 'Configured endpoint'
-  }
 }
 
 function billingRedirect(text: string, field: 'checkout_url' | 'portal_url', allowedHost: string) {
@@ -64,6 +54,7 @@ export default function SettingsPage({ onOpenRunLog, onLeadRestored }: Props) {
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false)
   const [checkedAt, setCheckedAt] = useState<Date | null>(null)
   const [showArchive, setShowArchive] = useState(false)
+  const [workspaceSettingsTab, setWorkspaceSettingsTab] = useState<WorkspaceSettingsTab>('identity')
   const [billingPlanChoice, setBillingPlanChoice] = useState<BillingPlanCode>('starter')
   const [billingCycleChoice, setBillingCycleChoice] = useState<BillingCycleChoice>('monthly')
   const [billingActionLoading, setBillingActionLoading] = useState<'checkout' | 'portal' | null>(null)
@@ -98,8 +89,6 @@ export default function SettingsPage({ onOpenRunLog, onLeadRestored }: Props) {
     let nextDeploymentType: string | null = null
 
     if (workspaceId) {
-      // Billing tables landed after the checked-in generated Database type.
-      // Keep the query locally typed until the next schema type generation.
       const billingClient = supabase as unknown as SupabaseClient
       const { data: subscription } = await billingClient
         .from('subscriptions')
@@ -241,48 +230,88 @@ export default function SettingsPage({ onOpenRunLog, onLeadRestored }: Props) {
         <div>
           <div className="eyebrow">WORKSPACE CONTROL</div>
           <h1>Settings</h1>
-          <p>Review production connections, routing safeguards and the current automation behavior of Smart CRM.</p>
+          <p>Manage workspace identity, messaging, routing safeguards, billing and your account preferences.</p>
         </div>
         <button className="button secondary" type="button" onClick={() => void checkHealth()} disabled={checking}>
           {checking ? 'Checking…' : '↻ Refresh health'}
         </button>
       </section>
 
-      <section className="settings-health-grid">
+      <section className="settings-health-grid" aria-label="System health">
         <article className="panel settings-health-card">
-          <div className="settings-card-heading"><span className={`system-dot ${databaseHealthy ? 'ok' : 'bad'}`} /><div><span className="mini-label">DATABASE</span><h2>Supabase</h2></div></div>
+          <div className="settings-card-heading"><span className={`system-dot ${databaseHealthy ? 'ok' : 'bad'}`} /><div><span className="mini-label">CRM DATA</span><h2>Workspace records</h2></div></div>
           <strong>{checking ? 'Checking connection…' : databaseHealthy ? 'Connected' : 'Needs attention'}</strong>
           <p>{activeLeadCount ?? '—'} active · {archivedLeadCount ?? '—'} archived · {routingEventCount ?? '—'} routing events</p>
         </article>
 
         <article className="panel settings-health-card">
-          <div className="settings-card-heading"><span className="system-dot ok" /><div><span className="mini-label">LEAD INTAKE</span><h2>n8n production webhook</h2></div></div>
-          <strong>Production endpoint configured</strong>
-          <p className="endpoint-copy">{endpointLabel(LEAD_WEBHOOK)}</p>
+          <div className="settings-card-heading"><span className="system-dot ok" /><div><span className="mini-label">LEAD INTAKE</span><h2>Capture service</h2></div></div>
+          <strong>Ready</strong>
+          <p>New leads can enter the production classification and intake flow.</p>
         </article>
 
         <article className="panel settings-health-card">
-          <div className="settings-card-heading"><span className="system-dot ok" /><div><span className="mini-label">STATUS ROUTER</span><h2>n8n production webhook</h2></div></div>
-          <strong>Production endpoint configured</strong>
-          <p className="endpoint-copy">{endpointLabel(STATUS_WEBHOOK)}</p>
+          <div className="settings-card-heading"><span className="system-dot ok" /><div><span className="mini-label">LEAD ROUTING</span><h2>Automation service</h2></div></div>
+          <strong>Ready</strong>
+          <p>Lead status changes are connected to the production routing flow.</p>
         </article>
       </section>
 
-      <WorkspaceBrandingPanel />
-      <MessageTemplatesPanel />
+      <section className="settings-tabbed-section" aria-label="Workspace and account settings">
+        <div className="settings-tab-toolbar">
+          <div>
+            <span className="mini-label">WORKSPACE & ACCOUNT</span>
+            <h2>Identity, messages & profile</h2>
+            <p>Use tabs to edit one settings area at a time without scrolling through every editor.</p>
+          </div>
+          <div className="settings-tabs" role="tablist" aria-label="Workspace and account setup tabs">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={workspaceSettingsTab === 'identity'}
+              className={workspaceSettingsTab === 'identity' ? 'active' : ''}
+              onClick={() => setWorkspaceSettingsTab('identity')}
+            >
+              Client identity
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={workspaceSettingsTab === 'messages'}
+              className={workspaceSettingsTab === 'messages' ? 'active' : ''}
+              onClick={() => setWorkspaceSettingsTab('messages')}
+            >
+              Message design
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={workspaceSettingsTab === 'profile'}
+              className={workspaceSettingsTab === 'profile' ? 'active' : ''}
+              onClick={() => setWorkspaceSettingsTab('profile')}
+            >
+              Your profile
+            </button>
+          </div>
+        </div>
+        <div className="settings-tab-content" hidden={workspaceSettingsTab !== 'identity'}><WorkspaceBrandingPanel /></div>
+        <div className="settings-tab-content" hidden={workspaceSettingsTab !== 'messages'}><MessageTemplatesPanel /></div>
+        <div className="settings-tab-content profile-tab-content" hidden={workspaceSettingsTab !== 'profile'}><AccountProfilePanel /></div>
+      </section>
+
       {isPlatformAdmin ? <SubscriberProvisioningPanel /> : null}
 
       <section className="settings-layout">
         <article className="panel settings-section-card">
           <div className="settings-section-heading">
-            <div><span className="mini-label">ROUTING POLICY</span><h2>Automation behavior</h2><p>These rules describe how the CRM currently hands leads into the production routing workflow.</p></div>
+            <div><span className="mini-label">ROUTING POLICY</span><h2>Automation behavior</h2><p>These rules describe how Smart CRM currently handles leads in the production routing flow.</p></div>
             <button className="button tertiary" type="button" onClick={onOpenRunLog}>Open run log →</button>
           </div>
 
           <div className="automation-policy-list">
-            <div className="automation-policy-row"><span className="policy-route hot">Hot</span><div><strong>Immediate follow-up path</strong><p>High-priority leads are sent to the Hot n8n branch.</p></div><span className="policy-state active">Active</span></div>
-            <div className="automation-policy-row"><span className="policy-route warm">Warm</span><div><strong>Delayed nurture path</strong><p>Warm leads enter the nurture branch before follow-up.</p></div><span className="policy-state active">Active</span></div>
-            <div className="automation-policy-row"><span className="policy-route cold">Cold</span><div><strong>Low-priority queue</strong><p>Cold leads are retained without outbound follow-up from the status router.</p></div><span className="policy-state active">Active</span></div>
+            <div className="automation-policy-row"><span className="policy-route hot">Hot</span><div><strong>Immediate follow-up path</strong><p>High-priority leads are sent into the immediate follow-up path.</p></div><span className="policy-state active">Active</span></div>
+            <div className="automation-policy-row"><span className="policy-route warm">Warm</span><div><strong>Delayed nurture path</strong><p>Warm leads enter the nurture path before follow-up.</p></div><span className="policy-state active">Active</span></div>
+            <div className="automation-policy-row"><span className="policy-route cold">Cold</span><div><strong>Low-priority queue</strong><p>Cold leads are retained without automatic outbound follow-up.</p></div><span className="policy-state active">Active</span></div>
             <div className="automation-policy-row"><span className="policy-route guard">24h</span><div><strong>Duplicate automation guard</strong><p>The same lead cannot repeat the same accepted route within the cooldown window.</p></div><span className="policy-state active">On</span></div>
             <div className="automation-policy-row"><span className="policy-route calendar">Cal</span><div><strong>Automatic calendar creation</strong><p>Meeting creation stays separate from routing until a customer confirms a schedule.</p></div><span className="policy-state off">Off</span></div>
           </div>
@@ -370,7 +399,7 @@ export default function SettingsPage({ onOpenRunLog, onLeadRestored }: Props) {
             <span className="mini-label">DATA RETENTION</span>
             <h2>Archived leads</h2>
             <p className="settings-muted">{archivedLeadCount ?? '—'} records currently archived</p>
-            <p className="settings-note">Archived records stay out of active metrics and automations while keeping their database and routing history intact.</p>
+            <p className="settings-note">Archived records stay out of active metrics and automations while keeping their CRM and routing history intact.</p>
             <button className="button secondary settings-full-button" type="button" onClick={() => setShowArchive(true)}>Manage archive →</button>
           </article>
 
@@ -378,7 +407,7 @@ export default function SettingsPage({ onOpenRunLog, onLeadRestored }: Props) {
             <span className="mini-label">SYSTEM CHECK</span>
             <h2>Latest health refresh</h2>
             <p className="settings-muted">{checkedAt ? checkedAt.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Not checked yet'}</p>
-            <p className="settings-note">Webhook cards confirm the CRM is configured to use production endpoints. External n8n workflow state is managed in n8n itself.</p>
+            <p className="settings-note">These checks confirm Smart CRM can reach its production data and automation services. Infrastructure details stay outside the customer-facing workspace.</p>
           </article>
         </aside>
       </section>
