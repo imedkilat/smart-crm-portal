@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useWorkspace } from '../workspace-context'
+import '../settings-ux.css'
 
 const SIDEBAR_COLLAPSED_KEY = 'smartcrm:sidebar-collapsed'
 
