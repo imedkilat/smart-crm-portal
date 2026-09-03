@@ -16,6 +16,8 @@ const required = [
   "'ai_call.no_answer'",
   "'ai_call.transferred'",
   "'ai_call.transfer_failed'",
+  "jsonb_typeof(p_metadata) <> 'object'",
+  "'AI call idempotency key already belongs to a different lead/event'",
   "'source', 'ai_call_qualifier'",
   "'ai-call-callback:' || trim(p_provider_call_id)",
   "'Call back qualified lead'",
@@ -39,6 +41,12 @@ assert.ok(
 assert.ok(
   sql.includes('on conflict (workspace_id, idempotency_key) do nothing'),
   'event receipt must be concurrency-safe and idempotent'
+);
+
+assert.ok(
+  sql.includes('v_existing_lead_id is distinct from p_lead_id') &&
+    sql.includes('v_existing_activity_type is distinct from p_activity_type'),
+  'duplicate event keys must not be reusable for a different lead or activity type'
 );
 
 assert.ok(
