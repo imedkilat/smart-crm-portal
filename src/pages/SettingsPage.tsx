@@ -247,13 +247,13 @@ export default function SettingsPage({ onOpenRunLog, onLeadRestored }: Props) {
         <article className="panel settings-health-card">
           <div className="settings-card-heading"><span className="system-dot ok" /><div><span className="mini-label">LEAD INTAKE</span><h2>Capture service</h2></div></div>
           <strong>Ready</strong>
-          <p>New leads can enter the production classification and intake flow.</p>
+          <p>New leads can enter the secure AI classification and CRM intake flow.</p>
         </article>
 
         <article className="panel settings-health-card">
           <div className="settings-card-heading"><span className="system-dot ok" /><div><span className="mini-label">LEAD ROUTING</span><h2>Automation service</h2></div></div>
           <strong>Ready</strong>
-          <p>Lead status changes are connected to the production routing flow.</p>
+          <p>Lead status changes are connected to routing logic and activity tracking.</p>
         </article>
       </section>
 
@@ -304,14 +304,14 @@ export default function SettingsPage({ onOpenRunLog, onLeadRestored }: Props) {
       <section className="settings-layout">
         <article className="panel settings-section-card">
           <div className="settings-section-heading">
-            <div><span className="mini-label">ROUTING POLICY</span><h2>Automation behavior</h2><p>These rules describe how Smart CRM currently handles leads in the production routing flow.</p></div>
+            <div><span className="mini-label">ROUTING POLICY</span><h2>Automation behavior</h2><p>These rules describe how Smart CRM prioritizes leads and prepares follow-up actions.</p></div>
             <button className="button tertiary" type="button" onClick={onOpenRunLog}>Open run log →</button>
           </div>
 
           <div className="automation-policy-list">
-            <div className="automation-policy-row"><span className="policy-route hot">Hot</span><div><strong>Immediate follow-up path</strong><p>High-priority leads are sent into the immediate follow-up path.</p></div><span className="policy-state active">Active</span></div>
-            <div className="automation-policy-row"><span className="policy-route warm">Warm</span><div><strong>Delayed nurture path</strong><p>Warm leads enter the nurture path before follow-up.</p></div><span className="policy-state active">Active</span></div>
-            <div className="automation-policy-row"><span className="policy-route cold">Cold</span><div><strong>Low-priority queue</strong><p>Cold leads are retained without automatic outbound follow-up.</p></div><span className="policy-state active">Active</span></div>
+            <div className="automation-policy-row"><span className="policy-route hot">Hot</span><div><strong>Immediate attention</strong><p>High-priority leads are flagged for immediate attention and follow-up.</p></div><span className="policy-state active">Prioritized</span></div>
+            <div className="automation-policy-row"><span className="policy-route warm">Warm</span><div><strong>Nurture priority</strong><p>Warm leads stay visible for planned nurture and follow-up.</p></div><span className="policy-state active">Planned</span></div>
+            <div className="automation-policy-row"><span className="policy-route cold">Cold</span><div><strong>Low-priority queue</strong><p>Cold leads remain in the CRM without automatic outbound follow-up.</p></div><span className="policy-state active">Tracked</span></div>
             <div className="automation-policy-row"><span className="policy-route guard">24h</span><div><strong>Duplicate automation guard</strong><p>The same lead cannot repeat the same accepted route within the cooldown window.</p></div><span className="policy-state active">On</span></div>
             <div className="automation-policy-row"><span className="policy-route calendar">Cal</span><div><strong>Automatic calendar creation</strong><p>Meeting creation stays separate from routing until a customer confirms a schedule.</p></div><span className="policy-state off">Off</span></div>
           </div>
@@ -407,7 +407,7 @@ export default function SettingsPage({ onOpenRunLog, onLeadRestored }: Props) {
             <span className="mini-label">SYSTEM CHECK</span>
             <h2>Latest health refresh</h2>
             <p className="settings-muted">{checkedAt ? checkedAt.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Not checked yet'}</p>
-            <p className="settings-note">These checks confirm Smart CRM can reach its production data and automation services. Infrastructure details stay outside the customer-facing workspace.</p>
+            <p className="settings-note">These checks confirm Smart CRM can reach its workspace data and connected automation services. Infrastructure details stay outside the customer-facing workspace.</p>
           </article>
         </aside>
       </section>
