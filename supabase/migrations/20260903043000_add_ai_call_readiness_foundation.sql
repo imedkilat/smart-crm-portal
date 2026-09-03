@@ -18,7 +18,14 @@ alter table public.leads
   add constraint leads_owner_user_id_fkey
     foreign key (owner_user_id)
     references auth.users(id)
-    on delete set null;
+    on delete set null,
+  add constraint leads_owner_workspace_member_fkey
+    foreign key (workspace_id, owner_user_id)
+    references public.workspace_members(workspace_id, user_id)
+    on delete set null (owner_user_id);
+
+comment on constraint leads_owner_workspace_member_fkey on public.leads is
+  'Ensures an assigned lead owner is a member of the same workspace. Membership key changes are blocked while leads remain assigned; deleting the membership clears only owner_user_id.';
 
 create index leads_workspace_owner_idx
   on public.leads (workspace_id, owner_user_id)
@@ -64,42 +71,6 @@ create trigger trg_guard_lead_owner_workspace_membership
 before insert or update of workspace_id, owner_user_id on public.leads
 for each row
 execute function private.guard_lead_owner_workspace_membership();
-
-create or replace function private.clear_lead_owner_on_member_removal()
-returns trigger
-language plpgsql
-security definer
-set search_path = ''
-as $$
-begin
-  if tg_op = 'UPDATE'
-     and new.workspace_id is not distinct from old.workspace_id
-     and new.user_id is not distinct from old.user_id then
-    return new;
-  end if;
-
-  update public.leads
-  set owner_user_id = null
-  where workspace_id = old.workspace_id
-    and owner_user_id = old.user_id;
-
-  if tg_op = 'UPDATE' then
-    return new;
-  end if;
-  return old;
-end;
-$$;
-
-revoke all on function private.clear_lead_owner_on_member_removal() from public;
-revoke all on function private.clear_lead_owner_on_member_removal() from anon;
-revoke all on function private.clear_lead_owner_on_member_removal() from authenticated;
-grant execute on function private.clear_lead_owner_on_member_removal() to service_role;
-
-drop trigger if exists trg_clear_lead_owner_on_member_removal on public.workspace_members;
-create trigger trg_clear_lead_owner_on_member_removal
-after delete or update of workspace_id, user_id on public.workspace_members
-for each row
-execute function private.clear_lead_owner_on_member_removal();
 
 create table public.workspace_member_call_profiles (
   workspace_id uuid not null,
