@@ -9,11 +9,12 @@ const required = [
   "phone_e164 ~ '^\\+[1-9][0-9]{7,14}$'",
   'guard_lead_owner_workspace_membership',
   'Lead owner must be a member of the same workspace',
-  'trg_clear_lead_owner_on_member_removal',
-  'after delete or update of workspace_id, user_id on public.workspace_members',
+  'constraint leads_owner_workspace_member_fkey',
+  'foreign key (workspace_id, owner_user_id)',
+  'references public.workspace_members(workspace_id, user_id)',
+  'on delete set null (owner_user_id)',
   'create table public.workspace_member_call_profiles',
   'foreign key (workspace_id, user_id)',
-  'references public.workspace_members(workspace_id, user_id)',
   'accepts_warm_transfers boolean not null default false',
   'alter table public.workspace_member_call_profiles enable row level security',
   'revoke all on table public.workspace_member_call_profiles from public',
@@ -38,11 +39,12 @@ const forbidden = [
   'RETELL_API_KEY',
   'create_phone_call',
   'outbound_call_enabled',
+  'clear_lead_owner_on_member_removal',
 ]
 
 for (const marker of forbidden) {
   if (sql.includes(marker)) {
-    throw new Error(`Foundation migration must not enable provider/live calling behavior: ${marker}`)
+    throw new Error(`Foundation migration must not enable provider/live calling behavior or race-prone ownership cleanup: ${marker}`)
   }
 }
 
