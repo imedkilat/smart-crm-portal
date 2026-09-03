@@ -54,6 +54,8 @@ as $$
 declare
   v_lead_public_id text;
   v_owner_user_id uuid;
+  v_existing_lead_id bigint;
+  v_existing_activity_type text;
   v_crm_activity_public_id text;
   v_lead_activity_public_id text;
   v_callback_task_public_id text;
@@ -93,6 +95,10 @@ begin
     raise exception 'AI call activity title must be 1-240 characters';
   end if;
 
+  if p_metadata is not null and jsonb_typeof(p_metadata) <> 'object' then
+    raise exception 'AI call metadata must be a JSON object';
+  end if;
+
   select l.public_id, l.owner_user_id
     into v_lead_public_id, v_owner_user_id
   from public.leads l
@@ -114,10 +120,14 @@ begin
     end if;
   end if;
 
-  select r.crm_activity_public_id,
+  select r.lead_id,
+         r.activity_type,
+         r.crm_activity_public_id,
          r.lead_activity_public_id,
          r.callback_task_public_id
-    into v_crm_activity_public_id,
+    into v_existing_lead_id,
+         v_existing_activity_type,
+         v_crm_activity_public_id,
          v_lead_activity_public_id,
          v_callback_task_public_id
   from public.ai_call_event_receipts r
@@ -125,6 +135,11 @@ begin
     and r.idempotency_key = trim(p_idempotency_key);
 
   if found then
+    if v_existing_lead_id is distinct from p_lead_id
+       or v_existing_activity_type is distinct from p_activity_type then
+      raise exception 'AI call idempotency key already belongs to a different lead/event';
+    end if;
+
     return query select
       v_crm_activity_public_id,
       v_lead_activity_public_id,
@@ -148,15 +163,24 @@ begin
   returning id into v_inserted_receipt_id;
 
   if v_inserted_receipt_id is null then
-    select r.crm_activity_public_id,
+    select r.lead_id,
+           r.activity_type,
+           r.crm_activity_public_id,
            r.lead_activity_public_id,
            r.callback_task_public_id
-      into v_crm_activity_public_id,
+      into v_existing_lead_id,
+           v_existing_activity_type,
+           v_crm_activity_public_id,
            v_lead_activity_public_id,
            v_callback_task_public_id
     from public.ai_call_event_receipts r
     where r.workspace_id = p_workspace_id
       and r.idempotency_key = trim(p_idempotency_key);
+
+    if v_existing_lead_id is distinct from p_lead_id
+       or v_existing_activity_type is distinct from p_activity_type then
+      raise exception 'AI call idempotency key already belongs to a different lead/event';
+    end if;
 
     return query select
       v_crm_activity_public_id,
