@@ -3,6 +3,7 @@ name: AI Call Outcome Logging
 on:
   pull_request:
     paths:
+      - 'supabase/migrations/20260904011500_allow_ai_call_callback_task_prefix.sql'
       - 'supabase/migrations/20260904012000_add_ai_call_outcome_logging.sql'
       - 'scripts/verify-ai-call-outcome-logging.mjs'
       - '.github/workflows/ai-call-outcome-logging.yml'
@@ -10,6 +11,7 @@ on:
     branches:
       - main
     paths:
+      - 'supabase/migrations/20260904011500_allow_ai_call_callback_task_prefix.sql'
       - 'supabase/migrations/20260904012000_add_ai_call_outcome_logging.sql'
       - 'scripts/verify-ai-call-outcome-logging.mjs'
       - '.github/workflows/ai-call-outcome-logging.yml'
