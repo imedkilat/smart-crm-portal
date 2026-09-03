@@ -60,8 +60,8 @@ const navItems: NavItem[] = [
 const workflow = [
   ['01', 'Lead intake', 'Forms, Excel uploads and manual capture'],
   ['02', 'AI classification', 'Intent, Hot / Warm / Cold and summary'],
-  ['03', 'Storage', 'Structured records synced to Supabase'],
-  ['04', 'Follow-up', 'Automated outreach based on routing priority'],
+  ['03', 'CRM record', 'Structured lead records kept in one workspace'],
+  ['04', 'Follow-up readiness', 'Priority-based follow-up paths and task visibility'],
   ['05', 'Intelligence', 'Weekly trends, insights and reports'],
 ]
 
@@ -133,6 +133,13 @@ function freshnessLabel(lead: Lead, now = Date.now()) {
   return `${minutes}m ago`
 }
 
+function timeOfDayGreeting(now = new Date()) {
+  const hour = now.getHours()
+  if (hour < 12) return 'Good morning'
+  if (hour < 18) return 'Good afternoon'
+  return 'Good evening'
+}
+
 export default function App() {
   const { activeWorkspace } = useWorkspace()
   const { route, navigate, navigateLead } = useAppRoute()
@@ -196,7 +203,7 @@ export default function App() {
 
     async function loadDashboard() {
       if (!supabase) {
-        setError('Supabase is not configured.')
+        setError('Smart CRM data service is not configured.')
         setLoading(false)
         return
       }
@@ -311,9 +318,9 @@ export default function App() {
           <span className="status-kicker">AUTOMATION</span>
           <div className="live-row">
             <span className="live-dot" />
-            <span>Supabase connected</span>
+            <span>Workspace connected</span>
           </div>
-          <p>commercial foundation · live data</p>
+          <p>live CRM data · workspace scoped</p>
         </div>
       </aside>
 
@@ -411,6 +418,7 @@ function DashboardPage({
   onOpenLead: (lead: Lead) => void
 }) {
   const [freshnessNow, setFreshnessNow] = useState(() => Date.now())
+  const greeting = timeOfDayGreeting(new Date(freshnessNow))
 
   useEffect(() => {
     const timer = window.setInterval(() => setFreshnessNow(Date.now()), 60_000)
@@ -421,8 +429,8 @@ function DashboardPage({
     <>
       <section className="page-heading">
         <div>
-          <div className="eyebrow">SMART CRM · COMMERCIAL BUILD</div>
-          <h1>{greetingName ? `Good morning, ${greetingName}` : 'Good morning'}</h1>
+          <div className="eyebrow">SMART CRM · WORKSPACE OVERVIEW</div>
+          <h1>{greetingName ? `${greeting}, ${greetingName}` : greeting}</h1>
           <p>Here&apos;s what&apos;s happening with your lead pipeline.</p>
         </div>
         <div className="heading-actions">
@@ -441,7 +449,7 @@ function DashboardPage({
       {error && <div className="error-banner">Could not load CRM data: {error}</div>}
 
       <section className="kpi-grid" aria-label="Lead metrics">
-        <MetricCard label="Total leads" value={loading ? '—' : String(metrics.total)} tone="blue" note="Active in Supabase" />
+        <MetricCard label="Total leads" value={loading ? '—' : String(metrics.total)} tone="blue" note="Active CRM records" />
         <MetricCard label="Hot" value={loading ? '—' : String(metrics.hot)} tone="red" note="Hot routing priority" />
         <MetricCard label="Warm" value={loading ? '—' : String(metrics.warm)} tone="amber" note="Warm routing priority" />
         <MetricCard label="Cold" value={loading ? '—' : String(metrics.cold)} tone="cyan" note="Cold routing priority" />
@@ -454,9 +462,9 @@ function DashboardPage({
           <div>
             <div className="title-row">
               <h2>Automation pipeline</h2>
-              <span className="health-pill"><span /> Production routing</span>
+              <span className="health-pill"><span /> Routing connected</span>
             </div>
-            <p>Every lead moves through a structured automation flow before reporting.</p>
+            <p>Every lead moves through a structured CRM flow from intake to reporting.</p>
           </div>
           <button className="button tertiary" type="button" onClick={() => setPage('automation')}>View run log</button>
         </div>
@@ -522,7 +530,7 @@ function DashboardPage({
       <section className="panel recent-panel">
         <div className="section-heading compact">
           <div>
-            <span className="mini-label">LIVE FROM SUPABASE</span>
+            <span className="mini-label">LIVE CRM DATA</span>
             <h2>Recent leads</h2>
             <p>Click any lead to open its profile, edit operational details or change routing status.</p>
           </div>
@@ -681,7 +689,7 @@ function AnalyticsPage({
         <div>
           <div className="eyebrow">LIVE PIPELINE INTELLIGENCE</div>
           <h1>Analytics</h1>
-          <p>Lead routing, acquisition, intent and budget signals from your active Supabase data.</p>
+          <p>Lead routing, acquisition, intent and budget signals from your active CRM records.</p>
         </div>
         <span className="analytics-live"><i /> Live data</span>
       </section>
@@ -801,10 +809,10 @@ function AnalyticsPage({
               <h2>Latest intelligence</h2>
             </div>
           </div>
-          <p>{weeklySummary?.ai_summary || 'The next n8n weekly-summary run will write fresh AI commentary here.'}</p>
+          <p>{weeklySummary?.ai_summary || 'The next scheduled weekly summary will add fresh AI commentary here.'}</p>
           <div className="ai-analysis-footer">
             <span>{weeklySummary?.period || 'No reporting period yet'}</span>
-            <span>Supabase → Analytics</span>
+            <span>CRM data → Analytics</span>
           </div>
         </article>
       </section>
