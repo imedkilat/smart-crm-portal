@@ -1,0 +1,25 @@
+name: AI Call Outcome Logging
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/20260904012000_add_ai_call_outcome_logging.sql'
+      - 'scripts/verify-ai-call-outcome-logging.mjs'
+      - '.github/workflows/ai-call-outcome-logging.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'supabase/migrations/20260904012000_add_ai_call_outcome_logging.sql'
+      - 'scripts/verify-ai-call-outcome-logging.mjs'
+      - '.github/workflows/ai-call-outcome-logging.yml'
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node scripts/verify-ai-call-outcome-logging.mjs
