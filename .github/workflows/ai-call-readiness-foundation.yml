@@ -1,0 +1,25 @@
+name: AI call readiness foundation
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/**ai_call_readiness**.sql'
+      - 'scripts/verify-ai-call-readiness-foundation.mjs'
+      - '.github/workflows/ai-call-readiness-foundation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify call-readiness safety contract
+        run: node scripts/verify-ai-call-readiness-foundation.mjs
