@@ -55,6 +55,12 @@ export default function AccountProfilePanel() {
     let active = true
 
     async function loadProfile() {
+      setCallProfileLoading(true)
+      setCallProfileError(null)
+      setCallProfileNotice(null)
+      setTransferPhone('')
+      setAcceptsWarmTransfers(false)
+
       if (!supabase) {
         if (active) {
           setError('Account profile is unavailable right now.')
