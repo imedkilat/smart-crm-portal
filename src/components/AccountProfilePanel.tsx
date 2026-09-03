@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
+import { useWorkspace } from '../workspace-context'
 
 type ProfileDraft = {
   firstName: string
@@ -14,6 +16,8 @@ const EMPTY_PROFILE: ProfileDraft = {
   displayName: '',
   email: '',
 }
+
+const E164_PATTERN = /^\+[1-9][0-9]{7,14}$/
 
 function metadataString(metadata: Record<string, unknown>, key: string) {
   const value = metadata[key]
@@ -31,13 +35,21 @@ function profileFromMetadata(metadata: Record<string, unknown>, email: string) {
 }
 
 export default function AccountProfilePanel() {
+  const { activeWorkspace } = useWorkspace()
   const [draft, setDraft] = useState<ProfileDraft>(EMPTY_PROFILE)
   const [sourceMetadata, setSourceMetadata] = useState<Record<string, unknown>>({})
+  const [userId, setUserId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [transferPhone, setTransferPhone] = useState('')
+  const [acceptsWarmTransfers, setAcceptsWarmTransfers] = useState(false)
+  const [callProfileLoading, setCallProfileLoading] = useState(true)
+  const [callProfileSaving, setCallProfileSaving] = useState(false)
+  const [callProfileError, setCallProfileError] = useState<string | null>(null)
+  const [callProfileNotice, setCallProfileNotice] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
@@ -46,7 +58,9 @@ export default function AccountProfilePanel() {
       if (!supabase) {
         if (active) {
           setError('Account profile is unavailable right now.')
+          setCallProfileError('Warm transfer profile is unavailable right now.')
           setLoading(false)
+          setCallProfileLoading(false)
         }
         return
       }
@@ -56,21 +70,41 @@ export default function AccountProfilePanel() {
 
       if (userError || !data.user) {
         setError('Account profile could not be loaded.')
+        setCallProfileError('Warm transfer profile could not be loaded.')
         setLoading(false)
+        setCallProfileLoading(false)
         return
       }
 
       const metadata = (data.user.user_metadata || {}) as Record<string, unknown>
+      setUserId(data.user.id)
       setSourceMetadata(metadata)
       setDraft(profileFromMetadata(metadata, data.user.email || ''))
       setLoading(false)
+
+      const db = supabase as unknown as SupabaseClient
+      const { data: callProfile, error: callProfileLoadError } = await db
+        .from('workspace_member_call_profiles')
+        .select('warm_transfer_phone_e164, accepts_warm_transfers')
+        .eq('workspace_id', activeWorkspace.workspaceId)
+        .eq('user_id', data.user.id)
+        .maybeSingle()
+
+      if (!active) return
+      if (callProfileLoadError) {
+        setCallProfileError('Warm transfer profile could not be loaded.')
+      } else {
+        setTransferPhone(callProfile?.warm_transfer_phone_e164 ? String(callProfile.warm_transfer_phone_e164) : '')
+        setAcceptsWarmTransfers(Boolean(callProfile?.accepts_warm_transfers))
+      }
+      setCallProfileLoading(false)
     }
 
     void loadProfile()
     return () => {
       active = false
     }
-  }, [])
+  }, [activeWorkspace.workspaceId])
 
   function setField(field: keyof ProfileDraft, value: string) {
     setDraft((current) => ({ ...current, [field]: value }))
@@ -122,7 +156,45 @@ export default function AccountProfilePanel() {
     window.setTimeout(() => window.location.reload(), 650)
   }
 
+  async function saveCallProfile() {
+    if (!supabase || !userId || callProfileSaving) return
+
+    const normalizedPhone = transferPhone.trim()
+    if (normalizedPhone && !E164_PATTERN.test(normalizedPhone)) {
+      setCallProfileError('Use international E.164 format, for example +15551234567.')
+      return
+    }
+    if (acceptsWarmTransfers && !normalizedPhone) {
+      setCallProfileError('Add a transfer phone before enabling warm transfers.')
+      return
+    }
+
+    setCallProfileSaving(true)
+    setCallProfileError(null)
+    setCallProfileNotice(null)
+
+    const db = supabase as unknown as SupabaseClient
+    const { error: saveError } = await db
+      .from('workspace_member_call_profiles')
+      .upsert({
+        workspace_id: activeWorkspace.workspaceId,
+        user_id: userId,
+        warm_transfer_phone_e164: normalizedPhone || null,
+        accepts_warm_transfers: acceptsWarmTransfers,
+      }, { onConflict: 'workspace_id,user_id' })
+
+    setCallProfileSaving(false)
+    if (saveError) {
+      setCallProfileError(saveError.message || 'Warm transfer profile could not be saved.')
+      return
+    }
+
+    setTransferPhone(normalizedPhone)
+    setCallProfileNotice(acceptsWarmTransfers ? 'Warm transfer profile is ready.' : 'Warm transfer profile saved. Transfers remain disabled for you.')
+  }
+
   const summaryName = draft.displayName || [draft.firstName, draft.lastName].filter(Boolean).join(' ') || 'Name not set'
+  const transferReady = Boolean(acceptsWarmTransfers && transferPhone && E164_PATTERN.test(transferPhone))
 
   return (
     <article className="panel settings-section-card compact-card account-profile-card">
@@ -165,6 +237,39 @@ export default function AccountProfilePanel() {
 
       {error ? <div className="settings-inline-message error">{error}</div> : null}
       {notice ? <div className="settings-inline-message success">{notice}</div> : null}
+
+      <div className="profile-edit-form" style={{ marginTop: '1.25rem' }}>
+        <div className="profile-card-heading">
+          <div>
+            <span className="mini-label">AI CALL ROUTING · CALLING OFF</span>
+            <h2>Warm transfer profile</h2>
+          </div>
+          {!callProfileLoading ? <span className={`policy-state ${transferReady ? 'active' : 'off'}`}>{transferReady ? 'Ready' : 'Not ready'}</span> : null}
+        </div>
+        <p className="settings-muted">This private number is used only as your future warm-transfer destination. It is not shown in the workspace member directory.</p>
+
+        {callProfileLoading ? <p className="settings-muted">Loading warm transfer profile…</p> : (
+          <>
+            <label>
+              <span>Transfer phone · E.164</span>
+              <input value={transferPhone} onChange={(event) => setTransferPhone(event.target.value)} placeholder="+15551234567" inputMode="tel" autoComplete="tel" maxLength={16} />
+            </label>
+            <label className="owner-settings-row" style={{ alignItems: 'center' }}>
+              <span>Accept future AI warm transfers</span>
+              <input type="checkbox" checked={acceptsWarmTransfers} onChange={(event) => setAcceptsWarmTransfers(event.target.checked)} />
+            </label>
+            <div className="settings-inline-message info">Saving this profile does not enable AI calling. Provider dispatch remains disabled until the compliance and controlled-call gates are approved.</div>
+            <div className="profile-actions">
+              <button className="button primary" type="button" onClick={() => void saveCallProfile()} disabled={callProfileSaving}>
+                {callProfileSaving ? 'Saving…' : 'Save call profile'}
+              </button>
+            </div>
+          </>
+        )}
+
+        {callProfileError ? <div className="settings-inline-message error">{callProfileError}</div> : null}
+        {callProfileNotice ? <div className="settings-inline-message success">{callProfileNotice}</div> : null}
+      </div>
     </article>
   )
 }
