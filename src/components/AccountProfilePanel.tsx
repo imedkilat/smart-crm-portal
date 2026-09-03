@@ -249,38 +249,52 @@ export default function AccountProfilePanel() {
       {error ? <div className="settings-inline-message error">{error}</div> : null}
       {notice ? <div className="settings-inline-message success">{notice}</div> : null}
 
-      <div className="profile-edit-form" style={{ marginTop: '1.25rem' }}>
-        <div className="profile-card-heading">
-          <div>
+      <section className="warm-transfer-card" aria-labelledby="warm-transfer-title">
+        <div className="warm-transfer-heading">
+          <div className="warm-transfer-icon" aria-hidden="true">↗</div>
+          <div className="warm-transfer-heading-copy">
             <span className="mini-label">AI CALL ROUTING · CALLING OFF</span>
-            <h2>Warm transfer profile</h2>
+            <h2 id="warm-transfer-title">Warm transfer</h2>
+            <p>Choose where Smart CRM should reach you when an AI-qualified lead is ready to speak with a person.</p>
           </div>
           {!callProfileLoading ? <span className={`policy-state ${persistedTransferReady ? 'active' : 'off'}`}>{persistedTransferReady ? 'Ready' : 'Not ready'}</span> : null}
         </div>
-        <p className="settings-muted">This private number is used only as your future warm-transfer destination. It is not shown in the workspace member directory.</p>
 
         {callProfileLoading ? <p className="settings-muted">Loading warm transfer profile…</p> : (
-          <>
-            <label>
-              <span>Transfer phone · E.164</span>
+          <div className="warm-transfer-body">
+            <label className="warm-transfer-phone-field">
+              <span>Your warm-transfer number</span>
               <input value={transferPhone} onChange={(event) => setTransferPhone(event.target.value)} placeholder="+15551234567" inputMode="tel" autoComplete="tel" maxLength={16} />
+              <small>Use your own business or mobile number in international E.164 format. This stays private from the workspace member directory.</small>
             </label>
-            <label className="owner-settings-row" style={{ alignItems: 'center' }}>
-              <span>Accept future AI warm transfers</span>
-              <input type="checkbox" checked={acceptsWarmTransfers} onChange={(event) => setAcceptsWarmTransfers(event.target.checked)} />
-            </label>
-            <div className="settings-inline-message info">Saving this profile does not enable AI calling. Provider dispatch remains disabled until the compliance and controlled-call gates are approved.</div>
-            <div className="profile-actions">
+
+            <div className="warm-transfer-toggle-row">
+              <div>
+                <strong>Accept warm transfers</strong>
+                <span>Allow future AI calls to privately ring this number before connecting a qualified lead.</span>
+              </div>
+              <label className="switch-control" aria-label="Accept future AI warm transfers">
+                <input type="checkbox" checked={acceptsWarmTransfers} onChange={(event) => setAcceptsWarmTransfers(event.target.checked)} />
+                <span className="switch-track" aria-hidden="true"><span className="switch-knob" /></span>
+              </label>
+            </div>
+
+            <div className="warm-transfer-safety-note">
+              <span className="warm-transfer-info-icon" aria-hidden="true">i</span>
+              <p><strong>Calling is still off.</strong> Saving this only prepares your routing profile. No AI call or warm transfer can start until the compliance and controlled-call gates are approved.</p>
+            </div>
+
+            <div className="profile-actions warm-transfer-actions">
               <button className="button primary" type="button" onClick={() => void saveCallProfile()} disabled={callProfileSaving}>
-                {callProfileSaving ? 'Saving…' : 'Save call profile'}
+                {callProfileSaving ? 'Saving…' : 'Save warm-transfer settings'}
               </button>
             </div>
-          </>
+          </div>
         )}
 
         {callProfileError ? <div className="settings-inline-message error">{callProfileError}</div> : null}
         {callProfileNotice ? <div className="settings-inline-message success">{callProfileNotice}</div> : null}
-      </div>
+      </section>
     </article>
   )
 }
