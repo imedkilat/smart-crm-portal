@@ -65,6 +65,33 @@ before insert or update of workspace_id, owner_user_id on public.leads
 for each row
 execute function private.guard_lead_owner_workspace_membership();
 
+create or replace function private.clear_lead_owner_on_member_removal()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  update public.leads
+  set owner_user_id = null
+  where workspace_id = old.workspace_id
+    and owner_user_id = old.user_id;
+
+  return old;
+end;
+$$;
+
+revoke all on function private.clear_lead_owner_on_member_removal() from public;
+revoke all on function private.clear_lead_owner_on_member_removal() from anon;
+revoke all on function private.clear_lead_owner_on_member_removal() from authenticated;
+grant execute on function private.clear_lead_owner_on_member_removal() to service_role;
+
+drop trigger if exists trg_clear_lead_owner_on_member_removal on public.workspace_members;
+create trigger trg_clear_lead_owner_on_member_removal
+after delete on public.workspace_members
+for each row
+execute function private.clear_lead_owner_on_member_removal();
+
 create table public.workspace_member_call_profiles (
   workspace_id uuid not null,
   user_id uuid not null,
@@ -87,6 +114,13 @@ create table public.workspace_member_call_profiles (
       or warm_transfer_phone_e164 is not null
     )
 );
+
+comment on table public.workspace_member_call_profiles is
+  'Private per-workspace routing profile for AI Call Qualifier warm transfers. Does not represent real-time availability.';
+comment on column public.workspace_member_call_profiles.warm_transfer_phone_e164 is
+  'Private E.164 transfer destination. Never expose through the member directory or provider request assembled in the browser.';
+comment on column public.workspace_member_call_profiles.accepts_warm_transfers is
+  'Static opt-in/configuration flag for receiving warm transfers; not a real-time availability signal.';
 
 alter table public.workspace_member_call_profiles enable row level security;
 
@@ -212,4 +246,3 @@ $$;
 revoke all on function public.list_workspace_member_directory(uuid) from public;
 revoke all on function public.list_workspace_member_directory(uuid) from anon;
 grant execute on function public.list_workspace_member_directory(uuid) to authenticated;
-grant execute on function public.list_workspace_member_directory(uuid) to service_role;
