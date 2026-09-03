@@ -72,11 +72,20 @@ security definer
 set search_path = ''
 as $$
 begin
+  if tg_op = 'UPDATE'
+     and new.workspace_id is not distinct from old.workspace_id
+     and new.user_id is not distinct from old.user_id then
+    return new;
+  end if;
+
   update public.leads
   set owner_user_id = null
   where workspace_id = old.workspace_id
     and owner_user_id = old.user_id;
 
+  if tg_op = 'UPDATE' then
+    return new;
+  end if;
   return old;
 end;
 $$;
@@ -88,7 +97,7 @@ grant execute on function private.clear_lead_owner_on_member_removal() to servic
 
 drop trigger if exists trg_clear_lead_owner_on_member_removal on public.workspace_members;
 create trigger trg_clear_lead_owner_on_member_removal
-after delete on public.workspace_members
+after delete or update of workspace_id, user_id on public.workspace_members
 for each row
 execute function private.clear_lead_owner_on_member_removal();
 
@@ -124,6 +133,9 @@ comment on column public.workspace_member_call_profiles.accepts_warm_transfers i
 
 alter table public.workspace_member_call_profiles enable row level security;
 
+revoke all on table public.workspace_member_call_profiles from public;
+revoke all on table public.workspace_member_call_profiles from anon;
+revoke all on table public.workspace_member_call_profiles from authenticated;
 grant select, insert, update, delete
   on public.workspace_member_call_profiles
   to authenticated;
@@ -238,7 +250,12 @@ begin
   where wm.workspace_id = p_workspace_id
   order by
     case wm.role when 'owner' then 0 when 'admin' then 1 else 2 end,
-    display_name,
+    coalesce(
+      nullif(pg_catalog.btrim(au.raw_user_meta_data ->> 'display_name'), ''),
+      nullif(pg_catalog.btrim(au.raw_user_meta_data ->> 'full_name'), ''),
+      nullif(pg_catalog.btrim(au.raw_user_meta_data ->> 'name'), ''),
+      'Workspace member'
+    ),
     wm.user_id;
 end;
 $$;
