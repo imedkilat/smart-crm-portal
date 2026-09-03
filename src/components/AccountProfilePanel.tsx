@@ -46,6 +46,7 @@ export default function AccountProfilePanel() {
   const [notice, setNotice] = useState<string | null>(null)
   const [transferPhone, setTransferPhone] = useState('')
   const [acceptsWarmTransfers, setAcceptsWarmTransfers] = useState(false)
+  const [persistedTransferReady, setPersistedTransferReady] = useState(false)
   const [callProfileLoading, setCallProfileLoading] = useState(true)
   const [callProfileSaving, setCallProfileSaving] = useState(false)
   const [callProfileError, setCallProfileError] = useState<string | null>(null)
@@ -60,6 +61,7 @@ export default function AccountProfilePanel() {
       setCallProfileNotice(null)
       setTransferPhone('')
       setAcceptsWarmTransfers(false)
+      setPersistedTransferReady(false)
 
       if (!supabase) {
         if (active) {
@@ -100,8 +102,11 @@ export default function AccountProfilePanel() {
       if (callProfileLoadError) {
         setCallProfileError('Warm transfer profile could not be loaded.')
       } else {
-        setTransferPhone(callProfile?.warm_transfer_phone_e164 ? String(callProfile.warm_transfer_phone_e164) : '')
-        setAcceptsWarmTransfers(Boolean(callProfile?.accepts_warm_transfers))
+        const persistedPhone = callProfile?.warm_transfer_phone_e164 ? String(callProfile.warm_transfer_phone_e164) : ''
+        const persistedAcceptsWarmTransfers = Boolean(callProfile?.accepts_warm_transfers)
+        setTransferPhone(persistedPhone)
+        setAcceptsWarmTransfers(persistedAcceptsWarmTransfers)
+        setPersistedTransferReady(Boolean(persistedAcceptsWarmTransfers && persistedPhone && E164_PATTERN.test(persistedPhone)))
       }
       setCallProfileLoading(false)
     }
@@ -196,11 +201,11 @@ export default function AccountProfilePanel() {
     }
 
     setTransferPhone(normalizedPhone)
+    setPersistedTransferReady(Boolean(acceptsWarmTransfers && normalizedPhone && E164_PATTERN.test(normalizedPhone)))
     setCallProfileNotice(acceptsWarmTransfers ? 'Warm transfer profile is ready.' : 'Warm transfer profile saved. Transfers remain disabled for you.')
   }
 
   const summaryName = draft.displayName || [draft.firstName, draft.lastName].filter(Boolean).join(' ') || 'Name not set'
-  const transferReady = Boolean(acceptsWarmTransfers && transferPhone && E164_PATTERN.test(transferPhone))
 
   return (
     <article className="panel settings-section-card compact-card account-profile-card">
@@ -250,7 +255,7 @@ export default function AccountProfilePanel() {
             <span className="mini-label">AI CALL ROUTING · CALLING OFF</span>
             <h2>Warm transfer profile</h2>
           </div>
-          {!callProfileLoading ? <span className={`policy-state ${transferReady ? 'active' : 'off'}`}>{transferReady ? 'Ready' : 'Not ready'}</span> : null}
+          {!callProfileLoading ? <span className={`policy-state ${persistedTransferReady ? 'active' : 'off'}`}>{persistedTransferReady ? 'Ready' : 'Not ready'}</span> : null}
         </div>
         <p className="settings-muted">This private number is used only as your future warm-transfer destination. It is not shown in the workspace member directory.</p>
 
