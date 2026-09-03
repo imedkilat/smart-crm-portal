@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { formatLeadBudget } from '../lib/currency'
 import type { Database } from '../types/database'
+import LeadCallReadinessPanel from './LeadCallReadinessPanel'
 import '../lead-drawer.css'
 import '../lead-ops.css'
 import '../lead-activity.css'
@@ -527,6 +528,15 @@ export default function LeadProfileDrawer({ lead, onClose, onUpdated }: Props) {
               <LeadDetail label="Added" value={new Date(currentLead.created_at).toLocaleString('en-US', { month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })} />
               <LeadDetail label="Source" value={currentLead.source || 'Unknown'} />
             </div>
+
+            <LeadCallReadinessPanel
+              lead={currentLead}
+              onUpdated={(updatedLead) => {
+                setCurrentLead(updatedLead)
+                setEditForm(toEditForm(updatedLead))
+                onUpdated(updatedLead)
+              }}
+            />
 
             <section className="lead-drawer-section ai-section">
               <div className="lead-section-heading">
