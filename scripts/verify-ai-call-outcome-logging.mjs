@@ -1,8 +1,10 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 
-const path = 'supabase/migrations/20260904012000_add_ai_call_outcome_logging.sql';
-const sql = fs.readFileSync(path, 'utf8');
+const outcomePath = 'supabase/migrations/20260904012000_add_ai_call_outcome_logging.sql';
+const guardPath = 'supabase/migrations/20260904011500_allow_ai_call_callback_task_prefix.sql';
+const sql = fs.readFileSync(outcomePath, 'utf8');
+const guardSql = fs.readFileSync(guardPath, 'utf8');
 
 const required = [
   'create table if not exists public.ai_call_event_receipts',
@@ -55,6 +57,25 @@ assert.ok(
   'callback task must reuse the existing workspace automation-key uniqueness boundary'
 );
 
+const guardRequired = [
+  'create or replace function private.guard_follow_up_task_insert()',
+  "v_is_production := new.automation_key like 'follow-up:v1:%'",
+  "v_is_qa := new.automation_key like 'follow-up:qa:v1:%'",
+  "v_is_ai_call_callback := new.automation_key like 'ai-call-callback:%'",
+  "new.title is distinct from 'Call back qualified lead'",
+  "new.status is distinct from 'open'",
+  "new.priority is distinct from 'high'",
+  'new.assigned_to is null',
+  "coalesce(v_subscription_status, '') not in ('trialing', 'active')",
+  "coalesce(v_plan_code, '') not in ('starter', 'pro', 'white_label')",
+  "t.automation_key like 'follow-up:v1:%'",
+  'v_today_count >= v_max_tasks_per_day'
+];
+
+for (const fragment of guardRequired) {
+  assert.ok(guardSql.includes(fragment), `missing callback/follow-up guard fragment: ${fragment}`);
+}
+
 const forbidden = [
   'api.retellai.com',
   'RETELL_API_KEY',
@@ -65,7 +86,8 @@ const forbidden = [
 ];
 
 for (const fragment of forbidden) {
-  assert.ok(!sql.includes(fragment), `forbidden live/provider fragment found: ${fragment}`);
+  assert.ok(!sql.includes(fragment), `forbidden live/provider fragment found in outcome migration: ${fragment}`);
+  assert.ok(!guardSql.includes(fragment), `forbidden live/provider fragment found in guard migration: ${fragment}`);
 }
 
 console.log('AI Call outcome logging source verification: PASS');
